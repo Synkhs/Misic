@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">MagicMusic</string>
+    <string name="widget_capsule_description">Cápsula Viva MagicOS 10 para controlar Spotify, YouTube Music y Amazon Music</string>
+    <string name="widget_card_description">Tarjeta MagicOS 10 con carátula, progreso y controles personalizados</string>
+    <string name="tile_play_pause_label">Música</string>
+    <string name="tile_next_label">Siguiente</string>
+    <string name="channel_media_bridge_name">Control en Pantalla de Bloqueo</string>
+    <string name="channel_media_bridge_desc">Controles multimedia personalizados estilo MagicOS 10 para Android 16</string>
+    <string name="listener_service_label">MagicMusic Puente Multimedia</string>
+</resources>
