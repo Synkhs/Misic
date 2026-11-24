@@ -1,10 +1,116 @@
 <resources>
     <string name="app_name">MagicMusic</string>
-    <string name="widget_capsule_description">Cápsula Viva MagicOS 10 para controlar Spotify, YouTube Music y Amazon Music</string>
-    <string name="widget_card_description">Tarjeta MagicOS 10 con carátula, progreso y controles personalizados</string>
+    <string name="widget_capsule_label">MagicMusic Cápsula (4×1)</string>
+    <string name="widget_card_label">MagicMusic Tarjeta (4×2)</string>
+    <string name="widget_square_label">MagicMusic Cuadrado (2×2)</string>
+    <string name="widget_mini_label">MagicMusic Mini (2×1)</string>
+    <string name="widget_capsule_description">Widget compacto Material 3 para controlar Spotify, YouTube Music, Amazon Music y más</string>
+    <string name="widget_card_description">Tarjeta musical Material 3 con carátula, barra de progreso y controles configurables</string>
+    <string name="widget_square_description">Widget cuadrado Material 3 2×2 con carátula grande y controles esenciales</string>
+    <string name="widget_mini_description">Widget mini adaptable 2×1 o 1×1 para reproducción instantánea</string>
+    <string name="widget_empty_title">Sin reproducción activa</string>
+    <string name="widget_empty_subtitle">Toca para abrir tu reproductor</string>
+    <string name="cd_album_art">Carátula del álbum</string>
+
     <string name="tile_play_pause_label">Música</string>
     <string name="tile_next_label">Siguiente</string>
-    <string name="channel_media_bridge_name">Control en Pantalla de Bloqueo</string>
-    <string name="channel_media_bridge_desc">Controles multimedia personalizados estilo MagicOS 10 para Android 16</string>
+    <string name="tile_previous_label">Anterior</string>
+    <string name="tile_shuffle_label">Aleatorio</string>
+    <string name="tile_repeat_label">Repetir</string>
+    <string name="tile_favorite_label">Me gusta</string>
+    <string name="tile_sleep_timer_label">Temporizador</string>
+    <string name="channel_media_bridge_name">Control en pantalla de bloqueo</string>
+    <string name="channel_media_bridge_desc">Controles multimedia silenciosos en notificación y pantalla de bloqueo</string>
     <string name="listener_service_label">MagicMusic Puente Multimedia</string>
+
+    <!-- Navegación y destinos -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_library">Biblioteca</string>
+    <string name="nav_widgets">Widgets</string>
+    <string name="nav_controls">Controles</string>
+    <string name="nav_settings">Ajustes</string>
+    <string name="nav_appearance">Apariencia</string>
+    <string name="nav_lock">Pantalla de bloqueo</string>
+    <string name="nav_quick_settings">Ajustes Rápidos</string>
+    <string name="nav_services">Servicios y compatibilidad</string>
+    <string name="nav_hires_engine">Motor Hi-Res</string>
+
+    <!-- Saludo neutro y búsqueda -->
+    <string name="greeting_morning">Buenos días</string>
+    <string name="greeting_afternoon">Buenas tardes</string>
+    <string name="greeting_evening">Buenas noches</string>
+    <string name="search_placeholder">Buscar sesiones, pistas o reproductores…</string>
+    <string name="search_library_placeholder">Buscar canciones, álbumes o artistas locales…</string>
+    <string name="search_cd">Buscar</string>
+    <string name="voice_search_cd">Limpiar búsqueda</string>
+
+    <!-- Chips y acciones -->
+    <string name="chip_all">Todo</string>
+    <string name="chip_local">Local</string>
+    <string name="action_shuffle">Aleatorio</string>
+    <string name="action_repeat">Repetir</string>
+    <string name="action_play_pause">Reproducir o pausar</string>
+    <string name="action_previous">Anterior</string>
+    <string name="action_next">Siguiente</string>
+    <string name="action_more_options">Más opciones</string>
+    <string name="action_favorite">Me gusta</string>
+    <string name="action_lyrics">Letras</string>
+    <string name="action_queue">Cola</string>
+    <string name="action_back">Volver</string>
+    <string name="action_fix">Arreglar</string>
+    <string name="action_continue">Continuar</string>
+
+    <!-- Tema y Apariencia -->
+    <string name="appearance_title">Apariencia</string>
+    <string name="appearance_subtitle">Sistema Material Design 3 en tiempo real</string>
+    <string name="appearance_mode_dark">Oscuro</string>
+    <string name="appearance_mode_tonal">Tonal</string>
+    <string name="appearance_mode_light">Claro</string>
+    <string name="appearance_color_palette">Color semilla</string>
+    <string name="appearance_dynamic_color">Color dinámico del sistema</string>
+    <string name="appearance_dynamic_color_desc">Adapta la paleta al fondo de pantalla en Android 12+</string>
+    <string name="appearance_amoled">Negro AMOLED</string>
+    <string name="appearance_amoled_desc">Usa fondo negro puro #000000 en tema oscuro</string>
+    <string name="appearance_artwork_tint">Color desde la carátula</string>
+    <string name="appearance_artwork_tint_desc">Extrae el tono dominante en Ahora suena, Letras y bloqueo</string>
+    <string name="appearance_reduce_animations">Reducir animaciones</string>
+    <string name="appearance_reduce_animations_desc">Minimiza movimientos continuos y transiciones</string>
+
+    <!-- Menú contextual, Letras, Cola y Temporizador -->
+    <string name="menu_add_playlist">Añadir a lista</string>
+    <string name="menu_share">Compartir</string>
+    <string name="menu_view_artist">Ver artista</string>
+    <string name="menu_view_album">Ver álbum</string>
+    <string name="menu_open_source">Abrir en app de origen</string>
+    <string name="timer_title">Temporizador de apagado</string>
+    <string name="timer_fade_out">Fundido de volumen suave</string>
+    <string name="timer_end_of_track">Al terminar la pista</string>
+    <string name="lyrics_empty_title">No hay letra disponible</string>
+    <string name="queue_title">Cola de reproducción</string>
+    <string name="queue_next_header">Siguiente en la cola</string>
+
+    <!-- Biblioteca Local y Motor Hi-Res -->
+    <string name="library_title">Biblioteca</string>
+    <string name="library_filter_tracks">Canciones</string>
+    <string name="library_filter_playlists">Listas</string>
+    <string name="library_filter_artists">Artistas</string>
+    <string name="library_filter_albums">Álbumes</string>
+    <string name="library_filter_folders">Carpetas</string>
+    <string name="library_listened_title">Escuchado</string>
+    <string name="library_popular_title">Popular</string>
+    <string name="library_permission_title">Permiso de música local</string>
+    <string name="library_permission_desc">Necesitamos acceso solo a tus archivos de audio locales (FLAC, WAV, MP3, AAC, OGG, ALAC) para indexar álbumes, artistas, carpetas y listas de reproducción.</string>
+    <string name="library_permission_btn">Permitir acceso a audio</string>
+    <string name="library_scan_btn">Escanear biblioteca</string>
+    <string name="hires_engine_title">Motor Hi-Res</string>
+    <string name="hires_diagnostics_btn">Autodiagnóstico</string>
+    <string name="trademark_disclaimer">Las marcas e iconos de terceros como Apple Music®, Spotify®, YouTube Music® o TIDAL® pertenecen a sus respectivos propietarios. MagicMusic es un controlador independiente sin afiliación ni patrocinio oficial.</string>
+
+    <!-- Ecualizador / Calidad / Ajustes / Onboarding / Estado -->
+    <string name="eq_title">Calidad de audio y Ecualizador</string>
+    <string name="eq_mode_basic">Básico</string>
+    <string name="eq_mode_advanced">Avanzado</string>
+    <string name="system_health_title">Estado del sistema</string>
+    <string name="onboarding_title">Configura MagicMusic</string>
+    <string name="stats_title">Estadísticas locales</string>
 </resources>

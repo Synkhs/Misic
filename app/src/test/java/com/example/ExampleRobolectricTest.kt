@@ -49,36 +49,46 @@ class ExampleRobolectricTest {
         val repo = PreferencesRepository(context)
         repo.updateWidgetConfig {
             it.copy(
-                style = WidgetStyle.DYNAMIC_NEON,
+                style = WidgetStyle.ARTWORK,
                 leftCustomAction = CustomControlAction.SWITCH_SOURCE,
             )
         }
         val snapshot = repo.getWidgetConfigSnapshot()
-        assertEquals(WidgetStyle.DYNAMIC_NEON, snapshot.style)
+        assertEquals(WidgetStyle.ARTWORK, snapshot.style)
         assertEquals(CustomControlAction.SWITCH_SOURCE, snapshot.leftCustomAction)
     }
 
     @Test
-    fun navigationTabs_switchBetweenHomeWidgetsLockAndServices() {
+    fun navigationTabs_switchBetweenHomeWidgetsControlsAndSettings() {
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("magic_capsule_banner").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("magic_mini_player").assertIsDisplayed()
 
+        // Widgets tab & 4 formats + pin action
         composeTestRule.onNodeWithTag("nav_tab_widgets").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("studio_mode_card").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("widget_studio_list").performScrollToNode(hasTestTag("studio_pin_widget_btn"))
         composeTestRule.onNodeWithTag("studio_pin_widget_btn").assertIsDisplayed()
 
-        composeTestRule.onNodeWithTag("nav_tab_lock_qs").performClick()
+        // Controls tab & internal Lock / Quick Settings tabs
+        composeTestRule.onNodeWithTag("nav_tab_controls").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("lock_qs_list").performScrollToNode(hasTestTag("open_lock_deck_preview_btn"))
         composeTestRule.onNodeWithTag("open_lock_deck_preview_btn").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("lock_qs_list").performScrollToNode(hasTestTag("add_qs_play_tile_btn"))
+        composeTestRule.onNodeWithTag("controls_tab_qs").performClick()
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("add_qs_play_tile_btn").assertIsDisplayed()
 
-        composeTestRule.onNodeWithTag("nav_tab_services").performClick()
+        // Settings tab -> Services -> Back -> Appearance
+        composeTestRule.onNodeWithTag("nav_tab_settings").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("settings_row_services").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("services_list").performScrollToNode(hasTestTag("service_card_spotify"))
         composeTestRule.onNodeWithTag("service_card_spotify").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("services_back_btn").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("settings_row_appearance").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("appearance_list").assertIsDisplayed()
     }
 }

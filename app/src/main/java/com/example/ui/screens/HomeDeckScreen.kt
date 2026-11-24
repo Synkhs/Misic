@@ -1,10 +1,9 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,489 +22,496 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.AddToHomeScreen
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.HealthAndSafety
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
-import com.example.data.CustomControlAction
+import com.example.core.media.HealthLight
+import com.example.data.ActiveSessionInfo
+import com.example.data.MusicServiceApp
+import com.example.data.TrackHistoryEntry
+import com.example.designsystem.MagicTheme
 import com.example.ui.MagicMusicUiState
 import com.example.ui.components.AnimatedEqualizerBars
-import com.example.ui.components.MagicGlassCard
-import com.example.ui.components.WidgetArtworkThumb
-import com.example.ui.components.customActionIcon
-import com.example.ui.components.formatTimeMs
-import com.example.ui.theme.HonorCobalt
-import com.example.ui.theme.HonorCyan
-import com.example.ui.theme.HonorMint
+import com.example.ui.components.CoverGridItem
+import com.example.ui.components.MagicAppIconBadge
+import com.example.ui.components.MagicFilterChip
+import com.example.ui.components.MagicHorizontalCoverGrid
+import com.example.ui.components.MagicSearchBarPill
+import com.example.ui.components.MagicSurfaceCard
+import java.util.Calendar
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeDeckScreen(
     state: MagicMusicUiState,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onCustomAction: (CustomControlAction) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     onSelectSession: (String) -> Unit,
+    onOpenSessionMenu: (ActiveSessionInfo) -> Unit,
     onToggleLocalEngine: () -> Unit,
-    onGrantListenerPermission: () -> Unit,
-    onRequestPostNotifications: () -> Unit,
-    onPinWidget: () -> Unit,
-    onAddQuickTile: () -> Unit,
+    onOpenNowPlaying: () -> Unit,
+    onOpenSystemHealth: () -> Unit,
+    onOpenServices: () -> Unit,
     onOpenActiveApp: (String) -> Unit,
-    onNavigateToWidgets: () -> Unit,
+    onPlayRecentTrack: (TrackHistoryEntry) -> Unit,
 ) {
+    val tokens = MagicTheme.tokens
+    val colors = MaterialTheme.colorScheme
     val media = state.media
+    var selectedFilterId by remember { mutableStateOf("all") }
+
+    val greeting = rememberTimeGreeting()
+    val iconLookup = remember(state.installedServices) {
+        state.installedServices.associateBy({ it.packageName }, { it.appIcon })
+    }
+
+    val query = state.searchQuery.trim()
+    val filteredSessions = remember(media.activeSessions, selectedFilterId, query) {
+        media.activeSessions.filter { session ->
+            val matchesChip = when (selectedFilterId) {
+                "all" -> true
+                "local" -> session.service == MusicServiceApp.LOCAL_ENGINE
+                else -> session.packageName == selectedFilterId
+            }
+            val matchesQuery = query.isEmpty() ||
+                session.title.contains(query, ignoreCase = true) ||
+                session.artist.contains(query, ignoreCase = true) ||
+                session.appLabel.contains(query, ignoreCase = true)
+            matchesChip && matchesQuery
+        }
+    }
+
+    val recentHistory = remember(state.listeningStats.recentTracks, selectedFilterId, query) {
+        state.listeningStats.recentTracks.filter { entry ->
+            val matchesChip = when (selectedFilterId) {
+                "all" -> true
+                "local" -> entry.service == MusicServiceApp.LOCAL_ENGINE
+                else -> entry.packageName == selectedFilterId
+            }
+            val matchesQuery = query.isEmpty() ||
+                entry.title.contains(query, ignoreCase = true) ||
+                entry.artist.contains(query, ignoreCase = true) ||
+                entry.service.displayName.contains(query, ignoreCase = true)
+            matchesChip && matchesQuery
+        }
+    }
+
+    val coverGridItems = remember(recentHistory, media) {
+        recentHistory.map { entry ->
+            val activeArt = if (entry.packageName == media.packageName && entry.title == media.title) {
+                media.albumArt
+            } else {
+                null
+            }
+            CoverGridItem(
+                id = entry.id,
+                title = entry.title,
+                subtitle = "${entry.artist} • ${entry.service.displayName}",
+                accentTint = entry.service.accentColor,
+                bitmap = activeArt,
+                packageName = entry.packageName,
+            )
+        }
+    }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("home_deck_list"),
+        contentPadding = PaddingValues(
+            start = tokens.spacing.screenMargin,
+            end = tokens.spacing.screenMargin,
+            top = tokens.spacing.sm,
+            bottom = tokens.spacing.lg,
+        ),
+        verticalArrangement = Arrangement.spacedBy(tokens.spacing.md),
     ) {
-        // Hero MagicOS 10 Now Playing Deck
+        // 1. Neutral time-of-day greeting + subtle active badge
         item {
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                border = BorderStroke(
-                    1.2.dp,
-                    Brush.linearGradient(
-                        listOf(
-                            HonorCyan.copy(alpha = 0.55f),
-                            Color.White.copy(alpha = 0.14f),
-                        ),
-                    ),
-                ),
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_magicos_hero),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        alpha = 0.55f,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color(0x99070D1D),
-                                        Color(0xE60B1224),
-                                    ),
-                                ),
-                            ),
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = media.service.accentColor.copy(alpha = 0.20f),
-                                border = BorderStroke(1.dp, media.service.accentColor.copy(alpha = 0.5f)),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                ) {
-                                    if (media.isPlaying) {
-                                        AnimatedEqualizerBars(color = media.service.accentColor)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                    }
-                                    Text(
-                                        text = media.service.displayName.uppercase(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
-                                    )
-                                }
-                            }
-
-                            if (media.packageName.isNotBlank() && !media.isLocalEngine) {
-                                IconButton(
-                                    onClick = { onOpenActiveApp(media.packageName) },
-                                    modifier = Modifier.testTag("home_open_source_btn"),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                                        contentDescription = "Abrir app musical",
-                                        tint = HonorCyan,
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            WidgetArtworkThumb(media = media, size = 76.dp, radius = 22.dp)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = media.title,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = Color.White,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = media.artist,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Color(0xFFB8C7E0),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = media.album,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = HonorCyan.copy(alpha = 0.85f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Slider(
-                            value = media.progressFraction,
-                            onValueChange = { frac ->
-                                if (media.durationMs > 0L) {
-                                    onSeek((frac * media.durationMs).toLong())
-                                }
-                            },
-                            colors = SliderDefaults.colors(
-                                thumbColor = HonorCyan,
-                                activeTrackColor = HonorCyan,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.16f),
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = formatTimeMs(media.positionMs),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF94A3B8),
-                            )
-                            Text(
-                                text = if (media.durationMs > 0L) formatTimeMs(media.durationMs) else "--:--",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF94A3B8),
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = { onCustomAction(state.widgetConfig.leftCustomAction) },
-                                modifier = Modifier.testTag("home_custom_left_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = customActionIcon(state.widgetConfig.leftCustomAction),
-                                    contentDescription = state.widgetConfig.leftCustomAction.label,
-                                    tint = Color(0xFF94A3B8),
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onPrevious,
-                                modifier = Modifier.testTag("home_prev_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipPrevious,
-                                    contentDescription = "Anterior",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp),
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(62.dp)
-                                    .clip(CircleShape)
-                                    .background(Brush.linearGradient(listOf(HonorCyan, HonorCobalt)))
-                                    .clickable(onClick = onPlayPause)
-                                    .testTag("home_play_pause_btn"),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = "Reproducir o pausar",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(34.dp),
-                                )
-                            }
-
-                            IconButton(
-                                onClick = onNext,
-                                modifier = Modifier.testTag("home_next_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipNext,
-                                    contentDescription = "Siguiente",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(32.dp),
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { onCustomAction(state.widgetConfig.rightCustomAction) },
-                                modifier = Modifier.testTag("home_custom_right_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = customActionIcon(state.widgetConfig.rightCustomAction),
-                                    contentDescription = state.widgetConfig.rightCustomAction.label,
-                                    tint = Color(0xFF94A3B8),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        FilledTonalButton(
-                            onClick = onToggleLocalEngine,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (media.isLocalEngine && media.isPlaying) {
-                                    HonorCyan.copy(alpha = 0.22f)
-                                } else {
-                                    Color.White.copy(alpha = 0.10f)
-                                },
-                                contentColor = Color.White,
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("toggle_local_engine_btn"),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.GraphicEq,
-                                contentDescription = null,
-                                tint = HonorCyan,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (media.isLocalEngine && media.isPlaying) {
-                                    "Pausar Audio Hi-Res de Prueba"
-                                } else {
-                                    "Probar Audio Hi-Res Local (Widgets & Bloqueo)"
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Active sessions switcher
-        if (media.activeSessions.isNotEmpty()) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Sesiones Activas Detectadas",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(media.activeSessions, key = { it.packageName }) { session ->
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (session.isSelected) {
-                                    HonorCyan.copy(alpha = 0.18f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
-                                border = BorderStroke(
-                                    1.dp,
-                                    if (session.isSelected) HonorCyan else Color.White.copy(alpha = 0.14f),
-                                ),
-                                modifier = Modifier.clickable { onSelectSession(session.packageName) },
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .clip(CircleShape)
-                                            .background(session.service.accentColor),
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = session.service.displayName,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = Color.White,
-                                        )
-                                        Text(
-                                            text = session.title,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color(0xFF94A3B8),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Android 16 + MagicOS 10 Quick Setup Checklist
-        item {
-            MagicGlassCard(highlightBorder = !state.hasListenerPermission) {
                 Text(
-                    text = "Integración Android 16 & MagicOS 10",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = greeting,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = colors.onBackground,
+                    modifier = Modifier.testTag("home_greeting_text"),
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Conecta Spotify, YouTube Music y Amazon Music con tu escritorio, pantalla de bloqueo y Ajustes Rápidos.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                ChecklistRow(
-                    title = "Sincronización Multimedia Universal",
-                    subtitle = if (state.hasListenerPermission) {
-                        "Activo • Leyendo sesiones de Spotify, YT Music y Amazon"
-                    } else {
-                        "Requiere permiso de acceso a notificaciones multimedia"
-                    },
-                    isReady = state.hasListenerPermission,
-                    actionLabel = if (state.hasListenerPermission) "Listo" else "Activar",
-                    onClick = onGrantListenerPermission,
-                    testTag = "grant_listener_btn",
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                ChecklistRow(
-                    title = "Controles en Pantalla de Bloqueo",
-                    subtitle = if (state.hasPostNotificationsPermission) {
-                        "Permitido • Notificación MediaStyle Android 16 lista"
-                    } else {
-                        "Autoriza notificaciones para mostrar controles al bloquear"
-                    },
-                    isReady = state.hasPostNotificationsPermission,
-                    actionLabel = if (state.hasPostNotificationsPermission) "Listo" else "Permitir",
-                    onClick = onRequestPostNotifications,
-                    testTag = "grant_notifications_btn",
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = onPinWidget,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = HonorCobalt,
-                            contentColor = Color.White,
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("home_pin_widget_btn"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.AddToHomeScreen,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Fijar Widget", maxLines = 1)
-                    }
-
-                    FilledTonalButton(
-                        onClick = onAddQuickTile,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("home_add_qs_tile_btn"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Ajustes Ráp.", maxLines = 1)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
                 FilledTonalButton(
-                    onClick = onNavigateToWidgets,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("home_open_studio_btn"),
+                    onClick = onToggleLocalEngine,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("home_local_engine_chip"),
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Widgets,
+                        imageVector = Icons.Rounded.GraphicEq,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Personalizar Estilo MagicOS 10 en Estudio")
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (media.isLocalEngine && media.isPlaying) "Motor Hi-Res activo" else "Motor Local",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
+
+        // 2. Editable Material 3 search pill matching reference #01
+        item {
+            MagicSearchBarPill(
+                query = state.searchQuery,
+                placeholder = stringResource(R.string.search_placeholder),
+                onClick = {},
+                onMicClick = onOpenServices,
+                onQueryChange = onSearchQueryChange,
+            )
+        }
+
+        // 3. Dynamic filter chips: Todo + each active session service + Local
+        item {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                item(key = "chip_all") {
+                    MagicFilterChip(
+                        label = stringResource(R.string.chip_all),
+                        selected = selectedFilterId == "all",
+                        onClick = { selectedFilterId = "all" },
+                        modifier = Modifier.testTag("home_chip_all"),
+                    )
+                }
+                items(
+                    items = media.activeSessions.distinctBy { it.packageName },
+                    key = { "chip_${it.packageName}" },
+                ) { session ->
+                    MagicFilterChip(
+                        label = session.appLabel,
+                        selected = selectedFilterId == session.packageName,
+                        onClick = {
+                            selectedFilterId = session.packageName
+                            onSelectSession(session.packageName)
+                        },
+                    )
+                }
+                if (media.activeSessions.none { it.service == MusicServiceApp.LOCAL_ENGINE }) {
+                    item(key = "chip_local") {
+                        MagicFilterChip(
+                            label = stringResource(R.string.chip_local),
+                            selected = selectedFilterId == "local",
+                            onClick = { selectedFilterId = "local" },
+                            leadingIcon = Icons.Rounded.MusicNote,
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Pending system health banner (only visible when there are amber/red items)
+        if (state.systemHealth.hasPendingIssues) {
+            item {
+                val isRed = state.systemHealth.overallLight == HealthLight.RED
+                val badgeTint = if (isRed) colors.error else tokens.semantic.warning
+                MagicSurfaceCard(
+                    highlightBorder = isRed,
+                    containerColor = tokens.semantic.elevatedCardSurface,
+                    modifier = Modifier.testTag("home_health_banner"),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(badgeTint.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.HealthAndSafety,
+                                contentDescription = null,
+                                tint = badgeTint,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${state.systemHealth.pendingCount} ajustes pendientes",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.onSurface,
+                            )
+                            Text(
+                                text = "Revisa permisos y batería para widgets estables",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onOpenSystemHealth,
+                            modifier = Modifier.testTag("home_health_fix_btn"),
+                        ) {
+                            Text("Revisar")
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Active sessions section (tap to switch, long-press / menu for options)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Sesiones activas",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onBackground,
+                )
+                FilledTonalButton(
+                    onClick = onOpenServices,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Servicios", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+
+        if (filteredSessions.isNotEmpty()) {
+            items(filteredSessions, key = { it.packageName }) { session ->
+                Surface(
+                    shape = RoundedCornerShape(tokens.radii.card),
+                    color = if (session.isSelected) {
+                        tokens.semantic.selectedContainer.copy(alpha = 0.55f)
+                    } else {
+                        tokens.semantic.cardSurface
+                    },
+                    border = BorderStroke(
+                        width = if (session.isSelected) 1.4.dp else 1.dp,
+                        color = if (session.isSelected) session.service.accentColor.copy(alpha = 0.85f) else tokens.semantic.divider,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(tokens.radii.card))
+                        .combinedClickable(
+                            onClick = {
+                                if (session.isSelected) {
+                                    onOpenNowPlaying()
+                                } else {
+                                    onSelectSession(session.packageName)
+                                }
+                            },
+                            onLongClick = { onOpenSessionMenu(session) },
+                        )
+                        .testTag("active_session_${session.service.id}"),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MagicAppIconBadge(
+                            drawable = iconLookup[session.packageName],
+                            fallbackTint = session.service.accentColor,
+                            contentDescription = session.appLabel,
+                            size = 46.dp,
+                            cornerRadius = 14.dp,
+                            service = session.service,
+                            serviceName = session.appLabel,
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = session.appLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = session.service.accentColor,
+                                )
+                                if (session.isSelected) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = colors.primary.copy(alpha = 0.18f),
+                                    ) {
+                                        Text(
+                                            text = "Activa",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colors.primary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = session.title.ifBlank { "Sin título de pista" },
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colors.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = session.artist.ifBlank { session.service.subtitle },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (session.isPlaying) {
+                            AnimatedEqualizerBars(
+                                color = session.service.accentColor,
+                                modifier = Modifier.padding(horizontal = 6.dp),
+                            )
+                        }
+                        IconButton(onClick = { onOpenSessionMenu(session) }) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = stringResource(R.string.action_more_options),
+                                tint = colors.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            item {
+                HomeEmptySessionsCard(
+                    hasQuery = query.isNotBlank(),
+                    onStartLocal = onToggleLocalEngine,
+                    onOpenServices = onOpenServices,
+                )
+            }
+        }
+
+        // 6. Recently played horizontal cover grid backed by real local history
+        if (coverGridItems.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Escuchado recientemente",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onBackground,
+                )
+            }
+            item {
+                MagicHorizontalCoverGrid(
+                    items = coverGridItems,
+                    horizontalPadding = 0.dp,
+                    onItemClick = { gridItem ->
+                        val entry = recentHistory.firstOrNull { it.id == gridItem.id }
+                        if (entry != null) {
+                            onPlayRecentTrack(entry)
+                        } else if (gridItem.packageName.isNotBlank()) {
+                            onOpenActiveApp(gridItem.packageName)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeEmptySessionsCard(
+    hasQuery: Boolean,
+    onStartLocal: () -> Unit,
+    onOpenServices: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    MagicSurfaceCard(modifier = Modifier.testTag("home_empty_sessions_card")) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(colors.primary.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            Text(
+                text = if (hasQuery) "No hay coincidencias con tu búsqueda" else "Sin reproducción externa activa",
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.onSurface,
+            )
+            Text(
+                text = "Abre Spotify, YouTube Music, Amazon Music u otra app, o inicia el Motor Local Hi-Res para probar controles y widgets.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = onStartLocal,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary,
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("home_start_local_btn"),
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Motor Local")
+                }
+                FilledTonalButton(
+                    onClick = onOpenServices,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Abrir app")
                 }
             }
         }
@@ -513,62 +519,11 @@ fun HomeDeckScreen(
 }
 
 @Composable
-private fun ChecklistRow(
-    title: String,
-    subtitle: String,
-    isReady: Boolean,
-    actionLabel: String,
-    onClick: () -> Unit,
-    testTag: String,
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = Color.White.copy(alpha = 0.05f),
-        border = BorderStroke(
-            1.dp,
-            if (isReady) HonorMint.copy(alpha = 0.4f) else HonorCyan.copy(alpha = 0.35f),
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .testTag(testTag),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (isReady) Icons.Rounded.CheckCircle else Icons.Rounded.NotificationsActive,
-                contentDescription = null,
-                tint = if (isReady) HonorMint else HonorCyan,
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF94A3B8),
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Surface(
-                shape = CircleShape,
-                color = if (isReady) HonorMint.copy(alpha = 0.16f) else HonorCyan.copy(alpha = 0.2f),
-            ) {
-                Text(
-                    text = actionLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isReady) HonorMint else HonorCyan,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                )
-            }
-        }
+private fun rememberTimeGreeting(): String {
+    val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    return when (hour) {
+        in 6..11 -> stringResource(R.string.greeting_morning)
+        in 12..19 -> stringResource(R.string.greeting_afternoon)
+        else -> stringResource(R.string.greeting_evening)
     }
 }

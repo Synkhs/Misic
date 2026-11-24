@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_magic_audio_fg"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Subtle inner tonal squircle badge inside 66dp safe zone (x:24..84, y:24..84) -->
+    <path
+        android:fillColor="#33CDA9FF"
+        android:pathData="M36,28h36a12,12 0 0,1 12,12v28a12,12 0 0,1 -12,12h-36a12,12 0 0,1 -12,-12v-28a12,12 0 0,1 12,-12z" />
+    <!-- Crisp beamed double eighth-note silhouette centered inside 66dp safe zone -->
+    <path
+        android:fillColor="#FFF5EEFF"
+        android:pathData="M67,35.5L46.5,40.4C45.1,40.7 44,42 44,43.5v17.8c-1.1,-0.5 -2.3,-0.8 -3.7,-0.8 -4.1,0 -7.3,3 -7.3,6.7 0,3.7 3.2,6.7 7.3,6.7 4.1,0 7.2,-3 7.2,-6.7V47.6l16.5,-3.9v14.2c-1.1,-0.5 -2.3,-0.8 -3.7,-0.8 -4.1,0 -7.3,3 -7.3,6.7 0,3.7 3.2,6.7 7.3,6.7 4.1,0 7.2,-3 7.2,-6.7V38.1c0,-1.8 -1.6,-3 -3.5,-2.6z" />
+</vector>

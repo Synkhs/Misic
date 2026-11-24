@@ -3,29 +3,30 @@ package com.example.widget
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.example.core.media.MediaRepository
 import com.example.data.PreferencesRepository
-import com.example.media.MediaHubController
 import kotlinx.coroutines.runBlocking
 
 class MagicWidgetActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        MediaHubController.init(context.applicationContext)
+        val appCtx = context.applicationContext
+        MediaRepository.init(appCtx)
         when (intent.action) {
-            ACTION_PLAY_PAUSE -> MediaHubController.playPause()
-            ACTION_NEXT -> MediaHubController.next()
-            ACTION_PREV -> MediaHubController.previous()
-            ACTION_OPEN_SOURCE -> MediaHubController.openActiveOrPreferredApp(context.applicationContext)
+            ACTION_PLAY_PAUSE -> MediaRepository.playPause()
+            ACTION_NEXT -> MediaRepository.next()
+            ACTION_PREV -> MediaRepository.previous()
+            ACTION_OPEN_SOURCE -> MediaRepository.openActiveOrPreferredApp(appCtx)
             ACTION_CUSTOM_LEFT -> {
-                val cfg = runBlocking { PreferencesRepository(context).getWidgetConfigSnapshot() }
-                MediaHubController.executeCustomAction(cfg.leftCustomAction)
+                val cfg = runBlocking { PreferencesRepository(appCtx).getWidgetConfigSnapshot() }
+                MediaRepository.executeCustomAction(cfg.leftCustomAction)
             }
             ACTION_CUSTOM_RIGHT -> {
-                val cfg = runBlocking { PreferencesRepository(context).getWidgetConfigSnapshot() }
-                MediaHubController.executeCustomAction(cfg.rightCustomAction)
+                val cfg = runBlocking { PreferencesRepository(appCtx).getWidgetConfigSnapshot() }
+                MediaRepository.executeCustomAction(cfg.rightCustomAction)
             }
         }
-        MagicWidgetUpdater.updateAllWidgets(context.applicationContext)
+        MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
     }
 
     companion object {

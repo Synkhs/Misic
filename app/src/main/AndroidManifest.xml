@@ -3,8 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        android:minSdkVersion="34" />
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS"
+        android:minSdkVersion="33" />
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
+        android:minSdkVersion="33" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
@@ -14,18 +24,24 @@
         <package android:name="com.apple.android.music" />
         <package android:name="deezer.android.app" />
         <package android:name="com.aspiro.tidal" />
-        <package android:name="com.hihonor.cloudmusic" />
-        <package android:name="com.android.mediacenter" />
+        <package android:name="com.soundcloud.android" />
+        <package android:name="com.maxmpz.audioplayer" />
+        <package android:name="in.krosbits.musicolet" />
+        <package android:name="org.videolan.vlc" />
         <package android:name="com.google.android.youtube" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.APP_MUSIC" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
         </intent>
     </queries>
 
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -37,26 +53,26 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.MyApplication">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".quicksettings.LockScreenDeckActivity"
-            android:exported="true"
-            android:label="@string/app_name"
-            android:launchMode="singleTop"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:theme="@style/Theme.MyApplication">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".quicksettings.LockScreenDeckActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.MyApplication" />
 
         <service
             android:name=".media.MagicNotificationListenerService"
@@ -72,6 +88,15 @@
             android:name=".media.MagicMediaBridgeService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <service
+            android:name=".media.MagicHiResPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".quicksettings.MagicPlayPauseTileService"
@@ -98,10 +123,77 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".quicksettings.MagicPreviousTrackTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_magic_prev"
+            android:label="@string/tile_previous_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".quicksettings.MagicShuffleTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_magic_shuffle"
+            android:label="@string/tile_shuffle_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".quicksettings.MagicRepeatTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_magic_repeat"
+            android:label="@string/tile_repeat_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".quicksettings.MagicFavoriteTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_magic_favorite"
+            android:label="@string/tile_favorite_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <service
+            android:name=".quicksettings.MagicSleepTimerTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_magic_sleep_timer"
+            android:label="@string/tile_sleep_timer_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
         <receiver
             android:name=".widget.MagicWidgetCapsuleProvider"
             android:exported="true"
-            android:label="MagicOS 10 Cápsula (4x1)">
+            android:label="@string/widget_capsule_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -113,13 +205,37 @@
         <receiver
             android:name=".widget.MagicWidgetCardProvider"
             android:exported="true"
-            android:label="MagicOS 10 Tarjeta Control (4x2)">
+            android:label="@string/widget_card_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/magic_widget_card_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.MagicWidgetSquareProvider"
+            android:exported="true"
+            android:label="@string/widget_square_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/magic_widget_square_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.MagicWidgetMiniProvider"
+            android:exported="true"
+            android:label="@string/widget_mini_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/magic_widget_mini_info" />
         </receiver>
 
         <receiver

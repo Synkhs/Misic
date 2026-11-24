@@ -1,332 +1,278 @@
 package com.example.quicksettings
 
+import android.app.KeyguardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Replay10
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.SwapHoriz
-import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.core.media.MediaRepository
+import com.example.core.media.SleepTimerState
 import com.example.data.CustomControlAction
 import com.example.data.LockAndQsConfig
+import com.example.data.LockPrivacyLevel
 import com.example.data.PreferencesRepository
-import com.example.data.UnifiedMediaState
-import com.example.media.MediaHubController
-import com.example.ui.theme.HonorCobalt
-import com.example.ui.theme.HonorCyan
-import com.example.ui.theme.MagicObsidian
-import com.example.ui.theme.MyApplicationTheme
+import com.example.designsystem.ArtworkPaletteExtractor
+import com.example.designsystem.MagicMusicTheme
+import com.example.designsystem.ThemePreferences
+import com.example.designsystem.VioletSeedColor
+import com.example.ui.components.NowPlayingDeckContent
+import kotlinx.coroutines.delay
 
 class LockScreenDeckActivity : ComponentActivity() {
+
+    private var allowTurnScreenOn = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        MediaHubController.init(applicationContext)
+        MediaRepository.init(applicationContext)
+        MediaRepository.refreshAudioOutputs()
+        allowTurnScreenOn = intent?.getBooleanExtra(EXTRA_ALLOW_TURN_SCREEN_ON, false) ?: false
+
         val prefs = PreferencesRepository(applicationContext)
 
         setContent {
-            val media by MediaHubController.mediaState.collectAsState()
-            val lockConfig by prefs.lockAndQsConfigFlow.collectAsState(initial = LockAndQsConfig())
+            val media by MediaRepository.mediaState.collectAsStateWithLifecycle()
+            val playerState by MediaRepository.playerState.collectAsStateWithLifecycle()
+            val sleepTimer by MediaRepository.sleepTimerState.collectAsStateWithLifecycle(initialValue = SleepTimerState())
+            val audioOutputs by MediaRepository.audioOutputs.collectAsStateWithLifecycle()
+            val lockConfig by prefs.lockAndQsConfigFlow.collectAsStateWithLifecycle(initialValue = LockAndQsConfig())
+            val themePrefs by prefs.themePreferencesFlow.collectAsStateWithLifecycle(initialValue = ThemePreferences())
 
-            MyApplicationTheme(darkTheme = true) {
-                LockScreenDeckContent(
-                    media = media,
-                    lockConfig = lockConfig,
-                    onPlayPause = { MediaHubController.playPause() },
-                    onNext = { MediaHubController.next() },
-                    onPrevious = { MediaHubController.previous() },
-                    onSeek = { MediaHubController.seekTo(it) },
-                    onCustomAction = { MediaHubController.executeCustomAction(it) },
-                    onOpenSource = { MediaHubController.openActiveOrPreferredApp(this) },
-                    onClose = { finish() },
+            val km = remember { getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager }
+            var isKeyguardLocked by remember { mutableStateOf(km?.isKeyguardLocked == true) }
+            var lastInteractionMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+            LaunchedEffect(lockConfig.showOnLockScreen, lockConfig.lockPrivacyLevel, isKeyguardLocked) {
+                isKeyguardLocked = km?.isKeyguardLocked == true
+                val allowOnLock = lockConfig.showOnLockScreen && lockConfig.lockPrivacyLevel != LockPrivacyLevel.SECRET
+                applyLockWindowFlags(
+                    showWhenLocked = allowOnLock,
+                    turnScreenOn = allowTurnScreenOn && allowOnLock,
                 )
             }
+
+            // Inactivity auto-close when keyguard is locked
+            LaunchedEffect(lastInteractionMs, lockConfig.lockAutoCloseSeconds, media.isPlaying, isKeyguardLocked) {
+                val timeoutSec = lockConfig.lockAutoCloseSeconds
+                if (timeoutSec > 0 && isKeyguardLocked) {
+                    delay(timeoutSec * 1000L)
+                    finish()
+                }
+            }
+
+            var artworkColors by remember {
+                mutableStateOf(ArtworkPaletteExtractor.deriveFromFallbackSeed(VioletSeedColor))
+            }
+            LaunchedEffect(media.packageName, media.album, media.albumArt, lockConfig.showArtworkOnLockScreen, lockConfig.lockPrivacyLevel) {
+                val allowArtwork = lockConfig.showArtworkOnLockScreen &&
+                    (!isKeyguardLocked || lockConfig.lockPrivacyLevel == LockPrivacyLevel.PUBLIC)
+                artworkColors = ArtworkPaletteExtractor.extractCached(
+                    cacheKey = "${media.packageName}_${media.album}",
+                    bitmap = if (allowArtwork) media.albumArt else null,
+                    fallbackColor = if (media.hasActiveMedia) media.service.accentColor else VioletSeedColor,
+                )
+            }
+
+            val runProtected: (Boolean, () -> Unit) -> Unit = { requiresUnlock, block ->
+                val lockedNow = km?.isKeyguardLocked == true
+                isKeyguardLocked = lockedNow
+                if (requiresUnlock && lockedNow && km != null) {
+                    km.requestDismissKeyguard(
+                        this,
+                        object : KeyguardManager.KeyguardDismissCallback() {
+                            override fun onDismissSucceeded() {
+                                isKeyguardLocked = km.isKeyguardLocked
+                                block()
+                            }
+                        },
+                    )
+                } else {
+                    block()
+                }
+            }
+
+            MagicMusicTheme(themePreferences = themePrefs) {
+                val blockedBySecret = isKeyguardLocked &&
+                    (!lockConfig.showOnLockScreen || lockConfig.lockPrivacyLevel == LockPrivacyLevel.SECRET)
+
+                if (blockedBySecret) {
+                    SecretLockGuardView(
+                        onUnlock = {
+                            runProtected(true) {
+                                isKeyguardLocked = km?.isKeyguardLocked == true
+                            }
+                        },
+                        onClose = { finish() },
+                    )
+                } else {
+                    NowPlayingDeckContent(
+                        media = media,
+                        sleepTimer = sleepTimer,
+                        audioOutputs = audioOutputs,
+                        artworkColors = artworkColors,
+                        isLockScreenMode = true,
+                        isKeyguardLocked = isKeyguardLocked,
+                        lockPrivacyLevel = lockConfig.lockPrivacyLevel,
+                        showArtworkOnLockScreen = lockConfig.showArtworkOnLockScreen,
+                        lockCustomAction1 = lockConfig.lockScreenAction1,
+                        lockCustomAction2 = lockConfig.lockScreenAction2,
+                        initialVolumePercent = playerState.volumePercent,
+                        onBackOrClose = { finish() },
+                        onPlayPause = { MediaRepository.playPause() },
+                        onNext = { MediaRepository.next() },
+                        onPrevious = { MediaRepository.previous() },
+                        onSeekTo = { MediaRepository.seekTo(it) },
+                        onSeekBy = { MediaRepository.seekBy(it) },
+                        onToggleFavorite = { MediaRepository.toggleFavorite() },
+                        onToggleShuffle = { MediaRepository.toggleShuffle() },
+                        onToggleRepeat = { MediaRepository.toggleRepeat() },
+                        onStartSleepTimerCountdown = { mins, fade ->
+                            MediaRepository.startSleepTimerCountdown(mins, fade)
+                        },
+                        onStartSleepTimerEndOfTrack = { fade ->
+                            MediaRepository.startSleepTimerEndOfTrack(fade)
+                        },
+                        onToggleSleepFade = { MediaRepository.setSleepTimerFadeOut(it) },
+                        onCancelSleepTimer = { MediaRepository.cancelSleepTimer() },
+                        onSetVolumePercent = { MediaRepository.setMusicVolumePercent(it) },
+                        onRefreshOutputs = { MediaRepository.refreshAudioOutputs() },
+                        onSelectOutput = { MediaRepository.selectAudioOutput(it) },
+                        onOpenSourceApp = { pkg ->
+                            runProtected(lockConfig.requireUnlockToOpenApp) {
+                                MediaRepository.launchMusicApp(this, pkg)
+                            }
+                        },
+                        onCustomAction = { action ->
+                            val needsUnlock = when (action) {
+                                CustomControlAction.OPEN_PLAYER -> lockConfig.requireUnlockToOpenApp
+                                CustomControlAction.SWITCH_SOURCE -> lockConfig.requireUnlockToSwitchSource
+                                else -> lockConfig.requireUnlockForCustomActions
+                            }
+                            runProtected(needsUnlock) {
+                                MediaRepository.executeCustomAction(action)
+                            }
+                        },
+                        onRequestUnlock = {
+                            runProtected(true) {
+                                isKeyguardLocked = km?.isKeyguardLocked == true
+                            }
+                        },
+                        onUserInteraction = {
+                            lastInteractionMs = System.currentTimeMillis()
+                        },
+                    )
+                }
+            }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        allowTurnScreenOn = intent.getBooleanExtra(EXTRA_ALLOW_TURN_SCREEN_ON, false)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyLockWindowFlags(showWhenLocked: Boolean, turnScreenOn: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(showWhenLocked)
+            setTurnScreenOn(turnScreenOn)
+        } else {
+            if (showWhenLocked) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            }
+            if (turnScreenOn) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            }
+        }
+    }
+
+    companion object {
+        const val EXTRA_ALLOW_TURN_SCREEN_ON = "extra_allow_turn_screen_on"
     }
 }
 
 @Composable
-private fun LockScreenDeckContent(
-    media: UnifiedMediaState,
-    lockConfig: LockAndQsConfig,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onCustomAction: (CustomControlAction) -> Unit,
-    onOpenSource: () -> Unit,
+private fun SecretLockGuardView(
+    onUnlock: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MagicObsidian),
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = colors.background,
     ) {
-        Image(
-            painter = painterResource(id = R.drawable.img_magicos_hero),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            alpha = 0.5f,
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color(0x99060A14),
-                            Color(0xE6060A14),
-                        ),
-                    ),
-                ),
-        )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 20.dp)
-                .widthIn(max = 540.dp)
-                .align(Alignment.Center),
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xCC0D1628),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x5500D2FF)),
-                ) {
-                    Text(
-                        text = "MAGIC CAPSULE • ${media.service.displayName.uppercase()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HonorCyan,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    )
-                }
-
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.testTag("lock_deck_close"),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Cerrar panel de bloqueo",
-                        tint = Color.White,
-                    )
-                }
+            Icon(
+                imageVector = Icons.Rounded.Lock,
+                contentDescription = null,
+                tint = colors.primary,
+                modifier = Modifier.size(48.dp),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Controles ocultos en bloqueo",
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onBackground,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Tu configuración de privacidad oculta el reproductor mientras el dispositivo esté bloqueado.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onUnlock) {
+                Text("Desbloquear para controlar")
             }
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(220.dp)
-                        .clip(RoundedCornerShape(32.dp))
-                        .border(1.5.dp, Color(0x44FFFFFF), RoundedCornerShape(32.dp))
-                        .clickable { onOpenSource() },
-                ) {
-                    if (media.albumArt != null) {
-                        Image(
-                            bitmap = media.albumArt.asImageBitmap(),
-                            contentDescription = "Carátula del álbum",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Image(
-                            painter = painterResource(id = R.drawable.img_magic_album_art),
-                            contentDescription = "Carátula MagicOS",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(
-                    text = media.title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = "${media.artist} • ${media.album}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color(0xFF94A3B8),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Slider(
-                    value = media.progressFraction,
-                    onValueChange = { frac ->
-                        if (media.durationMs > 0L) {
-                            onSeek((frac * media.durationMs).toLong())
-                        }
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = HonorCyan,
-                        activeTrackColor = HonorCyan,
-                        inactiveTrackColor = Color(0x33FFFFFF),
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                color = Color(0xCC111B30),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF)),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
-                        onClick = { onCustomAction(lockConfig.lockScreenAction1) },
-                        modifier = Modifier.testTag("lock_deck_custom_1"),
-                    ) {
-                        Icon(
-                            imageVector = iconForCustomAction(lockConfig.lockScreenAction1),
-                            contentDescription = lockConfig.lockScreenAction1.label,
-                            tint = Color(0xFF94A3B8),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onPrevious,
-                        modifier = Modifier.testTag("lock_deck_prev"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipPrevious,
-                            contentDescription = "Pista anterior",
-                            tint = Color.White,
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(HonorCyan, HonorCobalt)))
-                            .clickable(onClick = onPlayPause)
-                            .testTag("lock_deck_play_pause"),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = "Reproducir o pausar",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onNext,
-                        modifier = Modifier.testTag("lock_deck_next"),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.SkipNext,
-                            contentDescription = "Siguiente pista",
-                            tint = Color.White,
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onCustomAction(lockConfig.lockScreenAction2) },
-                        modifier = Modifier.testTag("lock_deck_custom_2"),
-                    ) {
-                        Icon(
-                            imageVector = iconForCustomAction(lockConfig.lockScreenAction2),
-                            contentDescription = lockConfig.lockScreenAction2.label,
-                            tint = Color(0xFF94A3B8),
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onClose) {
+                Text("Cerrar")
             }
         }
     }
-}
-
-private fun iconForCustomAction(action: CustomControlAction): ImageVector = when (action) {
-    CustomControlAction.REWIND_15 -> Icons.Rounded.Replay10
-    CustomControlAction.FORWARD_15 -> Icons.Rounded.Forward10
-    CustomControlAction.SWITCH_SOURCE -> Icons.Rounded.SwapHoriz
-    CustomControlAction.OPEN_PLAYER -> Icons.AutoMirrored.Rounded.OpenInNew
-    CustomControlAction.MUTE_AUDIO -> Icons.AutoMirrored.Rounded.VolumeOff
 }
