@@ -10,6 +10,7 @@
     <string name="widget_mini_description">Widget mini adaptable 2×1 o 1×1 para reproducción instantánea</string>
     <string name="widget_empty_title">Sin reproducción activa</string>
     <string name="widget_empty_subtitle">Toca para abrir tu reproductor</string>
+    <string name="widget_configure_title">Configurar widget</string>
     <string name="cd_album_art">Carátula del álbum</string>
 
     <string name="tile_play_pause_label">Música</string>
@@ -26,10 +27,13 @@
     <!-- Navegación y destinos -->
     <string name="nav_home">Inicio</string>
     <string name="nav_library">Biblioteca</string>
+    <string name="nav_playlists">Listas</string>
+    <string name="nav_equalizer">Ecualizador</string>
+    <string name="nav_style">Estilo</string>
     <string name="nav_widgets">Widgets</string>
     <string name="nav_controls">Controles</string>
     <string name="nav_settings">Ajustes</string>
-    <string name="nav_appearance">Apariencia</string>
+    <string name="nav_appearance">Estilo</string>
     <string name="nav_lock">Pantalla de bloqueo</string>
     <string name="nav_quick_settings">Ajustes Rápidos</string>
     <string name="nav_services">Servicios y compatibilidad</string>

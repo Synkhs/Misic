@@ -32,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +43,9 @@ import com.example.data.TrackHistoryEntry
 import com.example.data.UnifiedMediaState
 import com.example.data.WidgetConfig
 import com.example.data.WidgetFormat
+import com.example.data.WidgetInstanceConfig
 import com.example.designsystem.MagicTheme
+import com.example.designsystem.ThemePreferences
 import com.example.widget.WidgetRenderModel
 
 @Composable
@@ -75,27 +76,38 @@ fun WidgetPreviewCard(
     onNext: () -> Unit,
     onCustomAction: (CustomControlAction) -> Unit,
     onOpenSource: () -> Unit,
+    instanceConfig: WidgetInstanceConfig? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val radius = config.cornerRadiusDp.dp
-    val palette = WidgetRenderModel.resolvePalette(
-        style = config.style,
-        glassOpacity = config.glassOpacity,
-        dominantArtworkArgb = dominantArtworkColor?.toArgb(),
-        serviceAccentArgb = if (media.hasActiveMedia) media.service.accentColor.toArgb() else null,
-        themePrimaryArgb = colors.primary.toArgb(),
-        themeOnPrimaryArgb = colors.onPrimary.toArgb(),
-    )
+    val radius = (instanceConfig?.cornerRadiusDp ?: config.cornerRadiusDp).dp
+    val palette = if (instanceConfig != null) {
+        WidgetRenderModel.resolvePaletteForInstance(
+            instance = instanceConfig,
+            appTheme = ThemePreferences(),
+            dominantArtworkArgb = dominantArtworkColor?.toArgb(),
+            serviceAccentArgb = if (media.hasActiveMedia) media.service.accentColor.toArgb() else null,
+            systemDynamicPrimaryArgb = colors.primary.toArgb(),
+            systemIsDark = MagicTheme.tokens.isDark,
+        )
+    } else {
+        WidgetRenderModel.resolvePalette(
+            style = config.style,
+            glassOpacity = config.glassOpacity,
+            dominantArtworkArgb = dominantArtworkColor?.toArgb(),
+            serviceAccentArgb = if (media.hasActiveMedia) media.service.accentColor.toArgb() else null,
+            themePrimaryArgb = colors.primary.toArgb(),
+            themeOnPrimaryArgb = colors.onPrimary.toArgb(),
+        )
+    }
+    val effectiveConfig = instanceConfig?.toWidgetConfig() ?: config
     val copy = WidgetRenderModel.resolveDisplayCopy(
         media = media,
-        config = config,
+        config = effectiveConfig,
         lastHistoryTrack = lastHistoryTrack,
         preferredPackage = preferredPackage,
     )
 
-    val bgBrush = Brush.linearGradient(
-        listOf(Color(palette.bgStartArgb), Color(palette.bgEndArgb)),
-    )
+    val bgColor = Color(palette.bgStartArgb)
     val borderColor = Color(palette.borderArgb)
     val titleColor = Color(palette.titleArgb)
     val subtitleColor = Color(palette.subtitleArgb)
@@ -112,7 +124,7 @@ fun WidgetPreviewCard(
             }
         }
         .clip(RoundedCornerShape(radius))
-        .background(bgBrush)
+        .background(bgColor)
         .border(1.dp, borderColor, RoundedCornerShape(radius))
         .padding(
             when (format) {
@@ -137,7 +149,7 @@ fun WidgetPreviewCard(
                         WidgetArtworkThumb(media = media, size = 46.dp, radius = 14.dp)
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            if (config.showServiceBadge) {
+                            if (effectiveConfig.showServiceBadge) {
                                 Text(
                                     text = copy.badgeText,
                                     style = MaterialTheme.typography.labelSmall,
@@ -193,7 +205,7 @@ fun WidgetPreviewCard(
                             WidgetArtworkThumb(media = media, size = 56.dp, radius = 16.dp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                if (config.showServiceBadge) {
+                                if (effectiveConfig.showServiceBadge) {
                                     Surface(
                                         shape = CircleShape,
                                         color = Color(palette.badgeBgArgb),
@@ -232,7 +244,7 @@ fun WidgetPreviewCard(
                             }
                         }
 
-                        if (config.showProgressBar) {
+                        if (effectiveConfig.showProgressBar) {
                             Spacer(modifier = Modifier.height(12.dp))
                             LinearProgressIndicator(
                                 progress = { if (media.hasActiveMedia) media.progressFraction else 0.35f },
@@ -252,10 +264,10 @@ fun WidgetPreviewCard(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { onCustomAction(config.leftCustomAction) }) {
+                            IconButton(onClick = { onCustomAction(effectiveConfig.leftCustomAction) }) {
                                 Icon(
-                                    imageVector = customActionIcon(config.leftCustomAction),
-                                    contentDescription = config.leftCustomAction.label,
+                                    imageVector = customActionIcon(effectiveConfig.leftCustomAction),
+                                    contentDescription = effectiveConfig.leftCustomAction.label,
                                     tint = subtitleColor,
                                 )
                             }
@@ -290,10 +302,10 @@ fun WidgetPreviewCard(
                                     modifier = Modifier.size(28.dp),
                                 )
                             }
-                            IconButton(onClick = { onCustomAction(config.rightCustomAction) }) {
+                            IconButton(onClick = { onCustomAction(effectiveConfig.rightCustomAction) }) {
                                 Icon(
-                                    imageVector = customActionIcon(config.rightCustomAction),
-                                    contentDescription = config.rightCustomAction.label,
+                                    imageVector = customActionIcon(effectiveConfig.rightCustomAction),
+                                    contentDescription = effectiveConfig.rightCustomAction.label,
                                     tint = subtitleColor,
                                 )
                             }
@@ -318,7 +330,7 @@ fun WidgetPreviewCard(
                                         modifier = Modifier.size(18.dp),
                                     )
                                 }
-                                if (config.showServiceBadge) {
+                                if (effectiveConfig.showServiceBadge) {
                                     Text(
                                         text = media.service.displayName.uppercase(),
                                         style = MaterialTheme.typography.labelSmall,
@@ -344,7 +356,7 @@ fun WidgetPreviewCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (config.showProgressBar) {
+                        if (effectiveConfig.showProgressBar) {
                             Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 progress = { if (media.hasActiveMedia) media.progressFraction else 0.35f },
@@ -440,6 +452,7 @@ fun WidgetArtworkThumb(
 ) {
     MagicAlbumArtwork(
         bitmap = media.albumArt,
+        artworkModel = media.albumArt ?: media.albumArtUri,
         contentDescription = "Carátula del álbum",
         cornerRadius = radius,
         fallbackTint = media.service.accentColor,

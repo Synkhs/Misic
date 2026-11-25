@@ -14,26 +14,25 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,10 +41,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.designsystem.ArtworkPaletteColors
 import com.example.designsystem.MagicTheme
-import com.example.designsystem.buildArtworkTintedBrush
+import com.example.designsystem.buildArtworkTonalSurface
 import com.example.ui.MagicMusicUiState
 import com.example.ui.components.MagicMiniPlayer
 import com.example.ui.components.MagicSurfaceCard
@@ -58,6 +58,7 @@ import com.example.ui.components.formatTimeMs
 fun LyricsScreen(
     state: MagicMusicUiState,
     artworkColors: ArtworkPaletteColors,
+    positionMs: Long = state.media.positionMs,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onStartLocalEngine: () -> Unit,
@@ -66,10 +67,11 @@ fun LyricsScreen(
     val colors = MaterialTheme.colorScheme
     val media = state.media
     val lyricsData = media.lyrics
+    val listState = rememberLazyListState()
 
     val activeIndex = if (lyricsData != null && lyricsData.lines.isNotEmpty()) {
         if (lyricsData.isSynced) {
-            lyricsData.lines.indexOfLast { it.timestampMs <= media.positionMs }.coerceAtLeast(0)
+            lyricsData.lines.indexOfLast { it.timestampMs <= positionMs }.coerceAtLeast(0)
         } else {
             0
         }
@@ -77,24 +79,31 @@ fun LyricsScreen(
         -1
     }
 
-    val bgBrush = if (tokens.colorFromArtwork) {
-        buildArtworkTintedBrush(
+    LaunchedEffect(activeIndex, tokens.lyricsAutoScroll) {
+        if (tokens.lyricsAutoScroll && activeIndex >= 0 && !tokens.motion.reduceAnimations) {
+            runCatching { listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0)) }
+        }
+    }
+
+    val bgColor = if (tokens.colorFromArtwork) {
+        buildArtworkTonalSurface(
             artworkColors = artworkColors,
             baseBackground = colors.background,
             isDark = tokens.isDark,
         )
     } else {
-        tokens.backgroundBrush
+        tokens.backgroundColor
     }
+
+    val baseLineSizeSp = MaterialTheme.typography.headlineSmall.fontSize.value * tokens.lyricsFontScale
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgBrush)
+            .background(bgColor)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        // Header matching reference 03
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -136,6 +145,7 @@ fun LyricsScreen(
 
         if (lyricsData != null && lyricsData.lines.isNotEmpty()) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -150,7 +160,10 @@ fun LyricsScreen(
                     val isActive = idx == activeIndex
                     Text(
                         text = line.text,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = baseLineSizeSp.sp,
+                            lineHeight = (baseLineSizeSp * 1.32f).sp,
+                        ),
                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                         color = if (isActive) colors.onBackground else colors.onSurfaceVariant.copy(alpha = 0.48f),
                     )
@@ -184,13 +197,13 @@ fun LyricsScreen(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(CircleShape)
-                                .background(colors.primary.copy(alpha = 0.16f)),
+                                .background(colors.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Lyrics,
                                 contentDescription = null,
-                                tint = colors.primary,
+                                tint = colors.onPrimaryContainer,
                                 modifier = Modifier.size(28.dp),
                             )
                         }
@@ -217,6 +230,8 @@ fun LyricsScreen(
 @Composable
 fun QueueScreen(
     state: MagicMusicUiState,
+    positionMs: Long = state.media.positionMs,
+    durationMs: Long = state.media.durationMs,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -234,11 +249,10 @@ fun QueueScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(tokens.backgroundBrush)
+            .background(tokens.backgroundColor)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        // Header matching reference 04
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -352,13 +366,13 @@ fun QueueScreen(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(CircleShape)
-                                .background(colors.primary.copy(alpha = 0.16f)),
+                                .background(colors.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                                 contentDescription = null,
-                                tint = colors.primary,
+                                tint = colors.onPrimaryContainer,
                                 modifier = Modifier.size(28.dp),
                             )
                         }
@@ -380,9 +394,10 @@ fun QueueScreen(
             }
         }
 
-        // Bottom persistent mini player matching reference 04
         MagicMiniPlayer(
             media = media,
+            positionMs = positionMs,
+            durationMs = durationMs,
             onPlayPause = onPlayPause,
             onNext = onNext,
             onClick = onOpenNowPlaying,

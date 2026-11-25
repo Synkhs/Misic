@@ -19,16 +19,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -38,7 +34,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Forward10
@@ -53,16 +48,11 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,10 +63,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -86,10 +78,17 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.core.artwork.LocalArtworkPipeline
 import com.example.data.CustomControlAction
 import com.example.data.MusicServiceApp
 import com.example.data.UnifiedMediaState
 import com.example.designsystem.MagicTheme
+import com.example.designsystem.expressive.MagicLinearWavyProgress
+import com.example.designsystem.expressive.MagicNavChromeItem
+import com.example.designsystem.expressive.MagicShortNavBar
+import com.example.designsystem.expressive.MagicWideNavRail
+import com.example.designsystem.expressive.MiniPlayerStyle
+import com.example.designsystem.expressive.resolveArtworkShape
 
 @Immutable
 data class NavItemUiModel(
@@ -98,7 +97,15 @@ data class NavItemUiModel(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
     val testTag: String,
-)
+) {
+    fun toChromeItem(): MagicNavChromeItem = MagicNavChromeItem(
+        id = id,
+        label = label,
+        selectedIcon = selectedIcon,
+        unselectedIcon = unselectedIcon,
+        testTag = testTag,
+    )
+}
 
 @Immutable
 data class CoverGridItem(
@@ -108,6 +115,7 @@ data class CoverGridItem(
     val accentTint: Color,
     val bitmap: Bitmap? = null,
     val packageName: String = "",
+    val artworkModel: Any? = null,
 )
 
 @Composable
@@ -126,8 +134,8 @@ fun MagicSurfaceCard(
         shape = RoundedCornerShape(cornerRadius),
         color = containerColor,
         border = BorderStroke(
-            width = if (highlightBorder) 1.2.dp else 1.dp,
-            color = if (highlightBorder) colors.primary.copy(alpha = 0.55f) else tokens.semantic.divider,
+            width = if (highlightBorder) 1.5.dp else 1.dp,
+            color = if (highlightBorder) colors.primary.copy(alpha = 0.6f) else tokens.semantic.divider,
         ),
         tonalElevation = tokens.elevations.card,
     ) {
@@ -147,37 +155,40 @@ fun MagicFilterChip(
     leadingIcon: ImageVector? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val tokens = MagicTheme.tokens
-    Surface(
+    FilterChip(
+        selected = selected,
         onClick = onClick,
-        shape = CircleShape,
-        color = if (selected) colors.primary else tokens.semantic.cardSurface,
-        border = if (selected) null else BorderStroke(1.dp, tokens.semantic.divider),
-        modifier = modifier.heightIn(min = 38.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-        ) {
-            if (leadingIcon != null) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    tint = if (selected) colors.onPrimary else colors.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+        label = {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (selected) colors.onPrimary else colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-    }
+        },
+        leadingIcon = if (leadingIcon != null) {
+            {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        } else {
+            null
+        },
+        shape = CircleShape,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = colors.surfaceContainerHigh,
+            labelColor = colors.onSurface,
+            iconColor = colors.onSurfaceVariant,
+            selectedContainerColor = colors.primaryContainer,
+            selectedLabelColor = colors.onPrimaryContainer,
+            selectedLeadingIconColor = colors.onPrimaryContainer,
+        ),
+        modifier = modifier.heightIn(min = 40.dp),
+    )
 }
 
 @Composable
@@ -194,7 +205,7 @@ fun MagicSearchBarPill(
     Surface(
         onClick = if (onQueryChange == null) onClick else ({}),
         shape = CircleShape,
-        color = tokens.semantic.cardSurface,
+        color = colors.surfaceContainerHigh,
         border = BorderStroke(1.dp, tokens.semantic.divider),
         modifier = modifier
             .fillMaxWidth()
@@ -385,17 +396,29 @@ fun MagicAlbumArtwork(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = MagicTheme.tokens.radii.artworkMedium,
     fallbackTint: Color? = null,
+    artworkModel: Any? = null,
+    shapeOverride: Shape? = null,
 ) {
-    val shape = RoundedCornerShape(cornerRadius)
+    val context = LocalContext.current
     val tokens = MagicTheme.tokens
+    val imageLoader = remember(context) {
+        LocalArtworkPipeline.getOrCreateImageLoader(context)
+    }
+    val resolvedShape = shapeOverride ?: resolveArtworkShape(
+        style = tokens.artworkShapeStyle,
+        useExpressiveM3 = tokens.useExpressiveM3,
+        fallbackCornerRadius = cornerRadius,
+    )
+    val modelToLoad: Any = artworkModel ?: bitmap ?: R.drawable.img_magic_album_art
     Box(
         modifier = modifier
-            .clip(shape)
-            .background(fallbackTint?.copy(alpha = 0.28f) ?: tokens.semantic.elevatedCardSurface),
+            .clip(resolvedShape)
+            .background(fallbackTint?.copy(alpha = 0.22f) ?: tokens.semantic.elevatedCardSurface),
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
-            model = bitmap ?: R.drawable.img_magic_album_art,
+            model = modelToLoad,
+            imageLoader = imageLoader,
             placeholder = painterResource(id = R.drawable.img_magic_album_art),
             error = painterResource(id = R.drawable.img_magic_album_art),
             contentDescription = contentDescription,
@@ -423,6 +446,7 @@ fun MagicCoverCardItem(
     ) {
         MagicAlbumArtwork(
             bitmap = item.bitmap,
+            artworkModel = item.artworkModel ?: item.bitmap,
             contentDescription = item.title,
             cornerRadius = tokens.radii.artworkMedium,
             fallbackTint = item.accentTint,
@@ -474,30 +498,42 @@ fun MagicMiniPlayer(
     onNext: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    positionMs: Long = media.positionMs,
+    durationMs: Long = media.durationMs,
 ) {
     val tokens = MagicTheme.tokens
     val colors = MaterialTheme.colorScheme
+    val isDocked = tokens.miniPlayerStyle == MiniPlayerStyle.DOCKED
+    val shape = if (isDocked) RoundedCornerShape(0.dp) else RoundedCornerShape(tokens.radii.miniPlayer)
+    val progress = if (durationMs > 0L) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        media.progressFraction
+    }
+
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(tokens.radii.miniPlayer),
-        color = tokens.semantic.miniPlayerSurface,
-        border = BorderStroke(1.dp, tokens.semantic.divider),
+        shape = shape,
+        color = colors.surfaceContainerHigh,
+        border = if (isDocked) null else BorderStroke(1.dp, colors.outlineVariant),
         tonalElevation = tokens.elevations.miniPlayer,
         modifier = modifier
             .fillMaxWidth()
+            .let { m -> if (isDocked) m else m }
             .testTag("magic_mini_player"),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MagicAlbumArtwork(
                     bitmap = media.albumArt,
+                    artworkModel = media.albumArt ?: media.albumArtUri,
                     contentDescription = "Carátula actual",
-                    cornerRadius = 10.dp,
+                    cornerRadius = 12.dp,
                     fallbackTint = media.service.accentColor,
                     modifier = Modifier.size(44.dp),
                 )
@@ -506,6 +542,7 @@ fun MagicMiniPlayer(
                     Text(
                         text = if (media.hasActiveMedia) media.title else "Sin música activa",
                         style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -514,7 +551,7 @@ fun MagicMiniPlayer(
                         text = if (media.hasActiveMedia) {
                             "${media.artist} • ${media.service.displayName}"
                         } else {
-                            "Conecta Spotify, YT Music o Motor Local"
+                            "Explora tu biblioteca o conecta Spotify / YouTube"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
@@ -529,7 +566,7 @@ fun MagicMiniPlayer(
                     Icon(
                         imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = "Reproducir o pausar",
-                        tint = colors.onSurface,
+                        tint = colors.primary,
                     )
                 }
                 IconButton(
@@ -543,13 +580,17 @@ fun MagicMiniPlayer(
                     )
                 }
             }
-            LinearProgressIndicator(
-                progress = { if (media.hasActiveMedia) media.progressFraction else 0f },
+            MagicLinearWavyProgress(
+                progress = if (media.hasActiveMedia) progress else 0f,
+                isPlaying = media.isPlaying && media.hasActiveMedia,
+                useExpressiveM3 = tokens.useExpressiveM3,
+                reduceAnimations = tokens.motion.reduceAnimations,
                 color = colors.primary,
-                trackColor = tokens.semantic.divider.copy(alpha = 0.45f),
+                trackColor = colors.surfaceContainerHighest,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp),
+                    .padding(horizontal = if (isDocked) 0.dp else 12.dp)
+                    .padding(bottom = 2.dp),
             )
         }
     }
@@ -563,41 +604,17 @@ fun MagicBottomNavBar(
     modifier: Modifier = Modifier,
 ) {
     val tokens = MagicTheme.tokens
-    val colors = MaterialTheme.colorScheme
-    NavigationBar(
-        containerColor = tokens.semantic.navBarContainer,
-        windowInsets = WindowInsets.navigationBars,
+    val chromeItems = remember(items) { items.map { it.toChromeItem() } }
+    MagicShortNavBar(
+        items = chromeItems,
+        selectedId = selectedId,
+        labelVisibility = tokens.navLabelVisibility,
+        useExpressiveM3 = tokens.useExpressiveM3,
+        onSelect = { chosen ->
+            items.firstOrNull { it.id == chosen.id }?.let(onSelect)
+        },
         modifier = modifier,
-    ) {
-        items.forEach { item ->
-            val selected = item.id == selectedId
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onSelect(item) },
-                icon = {
-                    Icon(
-                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                        contentDescription = item.label,
-                    )
-                },
-                label = {
-                    Text(
-                        text = item.label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = colors.onSecondaryContainer,
-                    selectedTextColor = colors.onSurface,
-                    indicatorColor = tokens.semantic.navPillIndicator,
-                    unselectedIconColor = colors.onSurfaceVariant,
-                    unselectedTextColor = colors.onSurfaceVariant,
-                ),
-                modifier = Modifier.testTag(item.testTag),
-            )
-        }
-    }
+    )
 }
 
 @Composable
@@ -606,38 +623,20 @@ fun MagicNavRail(
     selectedId: String,
     onSelect: (NavItemUiModel) -> Unit,
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
 ) {
     val tokens = MagicTheme.tokens
-    val colors = MaterialTheme.colorScheme
-    NavigationRail(
-        containerColor = tokens.semantic.navBarContainer,
-        modifier = modifier
-            .fillMaxHeight()
-            .statusBarsPadding(),
-    ) {
-        items.forEach { item ->
-            val selected = item.id == selectedId
-            NavigationRailItem(
-                selected = selected,
-                onClick = { onSelect(item) },
-                icon = {
-                    Icon(
-                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                        contentDescription = item.label,
-                    )
-                },
-                label = { Text(item.label, maxLines = 1) },
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = colors.onSecondaryContainer,
-                    selectedTextColor = colors.onSurface,
-                    indicatorColor = tokens.semantic.navPillIndicator,
-                    unselectedIconColor = colors.onSurfaceVariant,
-                    unselectedTextColor = colors.onSurfaceVariant,
-                ),
-                modifier = Modifier.testTag(item.testTag),
-            )
-        }
-    }
+    val chromeItems = remember(items) { items.map { it.toChromeItem() } }
+    MagicWideNavRail(
+        items = chromeItems,
+        selectedId = selectedId,
+        useExpressiveM3 = tokens.useExpressiveM3,
+        expanded = expanded,
+        onSelect = { chosen ->
+            items.firstOrNull { it.id == chosen.id }?.let(onSelect)
+        },
+        modifier = modifier,
+    )
 }
 
 @Composable

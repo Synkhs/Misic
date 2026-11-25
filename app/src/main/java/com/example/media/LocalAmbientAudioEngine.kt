@@ -274,6 +274,8 @@ class LocalAmbientAudioEngine {
         eqBridge.applyConfig(config)
     }
 
+    fun currentDspReport() = eqBridge.currentCapabilityReport()
+
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {

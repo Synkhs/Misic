@@ -34,23 +34,29 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.HealthAndSafety
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.ImageSearch
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SpeakerGroup
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +68,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -73,6 +81,7 @@ import com.example.core.media.HealthCheckId
 import com.example.core.media.HealthLight
 import com.example.data.AudioOutputDevice
 import com.example.designsystem.MagicTheme
+import com.example.designsystem.expressive.MagicFlexibleMediumTopBar
 import com.example.ui.MagicMusicUiState
 import com.example.ui.components.EqualizerBand
 import com.example.ui.components.EqualizerPreset
@@ -85,16 +94,20 @@ import com.example.ui.components.TrackItemVariant
 import com.example.ui.components.TrackListItemModel
 import com.example.ui.components.formatTimeMs
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     state: MagicMusicUiState,
     onOpenAppearance: () -> Unit,
     onOpenServices: () -> Unit,
     onOpenAudioQuality: () -> Unit,
+    onOpenControls: () -> Unit = {},
+    onOpenWidgetStudio: () -> Unit = {},
     onOpenStats: () -> Unit,
     onOpenSystemHealth: () -> Unit,
     onOpenOnboarding: () -> Unit,
     onOpenDeveloperShowcase: () -> Unit,
+    onOpenArtworkInspector: () -> Unit = {},
     onToggleBridge: (Boolean) -> Unit,
     onToggleLockVisibility: (Boolean) -> Unit,
     onToggleLockArtwork: (Boolean) -> Unit,
@@ -106,6 +119,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val tokens = MagicTheme.tokens
     val colors = MaterialTheme.colorScheme
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var showNotificationsDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
@@ -113,137 +127,174 @@ fun SettingsScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var backupDraft by remember { mutableStateOf("") }
 
-    LazyColumn(
+    Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .testTag("settings_hub_list"),
-        contentPadding = PaddingValues(
-            start = tokens.spacing.screenMargin,
-            end = tokens.spacing.screenMargin,
-            top = tokens.spacing.sm,
-            bottom = tokens.spacing.lg,
-        ),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Text(
-                text = stringResource(R.string.nav_settings),
-                style = MaterialTheme.typography.headlineMedium,
-                color = colors.onBackground,
-                modifier = Modifier.padding(bottom = 4.dp),
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
+        topBar = {
+            MagicFlexibleMediumTopBar(
+                title = stringResource(R.string.nav_settings),
+                subtitle = "Cuentas, bloqueo, widgets, privacidad y diagnóstico",
+                useExpressiveM3 = tokens.useExpressiveM3,
+                scrollBehavior = scrollBehavior,
             )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Palette,
-                title = stringResource(R.string.nav_appearance),
-                subtitle = "Tema Material 3, color dinámico, AMOLED y carátula",
-                onClick = onOpenAppearance,
-                modifier = Modifier.testTag("settings_row_appearance"),
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Album,
-                title = stringResource(R.string.nav_services),
-                subtitle = "Spotify, YouTube Music, reglas de prioridad y batería",
-                onClick = onOpenServices,
-                modifier = Modifier.testTag("settings_row_services"),
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Equalizer,
-                title = stringResource(R.string.eq_title),
-                subtitle = "Bandas dB, presets, Motor Hi-Res y salida Bluetooth",
-                onClick = onOpenAudioQuality,
-                modifier = Modifier.testTag("settings_row_audio"),
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.BarChart,
-                title = stringResource(R.string.stats_title),
-                subtitle = "${state.listeningStats.totalMinutes} min registrados en el dispositivo",
-                onClick = onOpenStats,
-                modifier = Modifier.testTag("settings_row_stats"),
-            )
-        }
-
-        item {
-            val pendingText = if (state.systemHealth.hasPendingIssues) {
-                "${state.systemHealth.pendingCount} revisiones pendientes"
-            } else {
-                "Todos los permisos y componentes activos"
-            }
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.HealthAndSafety,
-                title = stringResource(R.string.system_health_title),
-                subtitle = pendingText,
-                onClick = onOpenSystemHealth,
-                modifier = Modifier.testTag("settings_row_health"),
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.RocketLaunch,
-                title = "Asistente de configuración",
-                subtitle = "Repasa los permisos, widget y mosaico paso a paso",
-                onClick = onOpenOnboarding,
-                modifier = Modifier.testTag("settings_row_onboarding"),
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Notifications,
-                title = "Notificaciones",
-                subtitle = "Controles MediaStyle y canales del sistema",
-                onClick = { showNotificationsDialog = true },
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Shield,
-                title = "Privacidad",
-                subtitle = "Control 100% local sin cuentas ni rastreo en la nube",
-                onClick = { showPrivacyDialog = true },
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Backup,
-                title = "Copia de seguridad",
-                subtitle = "Exporta o restaura tus widgets y preferencias en JSON",
-                onClick = { showBackupDialog = true },
-            )
-        }
-
-        item {
-            MagicSettingsRowCard(
-                icon = Icons.Rounded.Info,
-                title = "Acerca de MagicMusic",
-                subtitle = "Versión ${BuildConfig.VERSION_NAME} • Control universal MediaSession",
-                onClick = { showAboutDialog = true },
-            )
-        }
-
-        if (BuildConfig.DEBUG) {
+        },
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .testTag("settings_hub_list"),
+            contentPadding = PaddingValues(
+                start = tokens.spacing.screenMargin,
+                end = tokens.spacing.screenMargin,
+                top = tokens.spacing.sm,
+                bottom = tokens.spacing.lg,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item {
                 MagicSettingsRowCard(
-                    icon = Icons.Rounded.BugReport,
-                    title = "Desarrollador",
-                    subtitle = "Galería de componentes Material 3 y pantallas de prueba (Debug)",
-                    onClick = onOpenDeveloperShowcase,
-                    modifier = Modifier.testTag("settings_row_developer"),
+                    icon = Icons.Rounded.Album,
+                    title = "Cuentas y Reproductores",
+                    subtitle = "Spotify OAuth, YouTube Google, Apple Music y MediaSession",
+                    onClick = onOpenServices,
+                    modifier = Modifier.testTag("settings_row_services"),
                 )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Palette,
+                    title = "Estilo y Material 3 Expressive",
+                    subtitle = "Estudio de color MCU, contraste WCAG, formas y tipografía",
+                    onClick = onOpenAppearance,
+                    modifier = Modifier.testTag("settings_row_appearance"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Widgets,
+                    title = stringResource(R.string.nav_widgets),
+                    subtitle = "4 formatos adaptables, color propio por widget y plantillas",
+                    onClick = onOpenWidgetStudio,
+                    modifier = Modifier.testTag("settings_row_widgets"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Lock,
+                    title = "Pantalla de bloqueo y Ajustes Rápidos",
+                    subtitle = "Privacidad MediaStyle, botones rápidos y 7 mosaicos QS",
+                    onClick = onOpenControls,
+                    modifier = Modifier.testTag("settings_row_controls"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Equalizer,
+                    title = stringResource(R.string.eq_title),
+                    subtitle = "Bandas dB, DSP local, perfiles Bluetooth y crossfade",
+                    onClick = onOpenAudioQuality,
+                    modifier = Modifier.testTag("settings_row_audio"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.BarChart,
+                    title = stringResource(R.string.stats_title),
+                    subtitle = "${state.listeningStats.totalMinutes} min registrados en el dispositivo",
+                    onClick = onOpenStats,
+                    modifier = Modifier.testTag("settings_row_stats"),
+                )
+            }
+
+            item {
+                val pendingText = if (state.systemHealth.hasPendingIssues) {
+                    "${state.systemHealth.pendingCount} revisiones pendientes"
+                } else {
+                    "Todos los permisos y componentes activos"
+                }
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.HealthAndSafety,
+                    title = stringResource(R.string.system_health_title),
+                    subtitle = pendingText,
+                    onClick = onOpenSystemHealth,
+                    modifier = Modifier.testTag("settings_row_health"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.RocketLaunch,
+                    title = "Asistente de configuración",
+                    subtitle = "Repasa los permisos, widget y mosaico paso a paso",
+                    onClick = onOpenOnboarding,
+                    modifier = Modifier.testTag("settings_row_onboarding"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Notifications,
+                    title = "Notificaciones",
+                    subtitle = "Controles MediaStyle y canales del sistema",
+                    onClick = { showNotificationsDialog = true },
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Shield,
+                    title = "Qué datos usa MagicMusic",
+                    subtitle = "Privacidad local, permisos mínimos y cifrado Keystore AES256",
+                    onClick = { showPrivacyDialog = true },
+                    modifier = Modifier.testTag("settings_row_privacy"),
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Backup,
+                    title = "Copia de seguridad",
+                    subtitle = "Exporta o restaura tus widgets, paletas y preferencias en JSON",
+                    onClick = { showBackupDialog = true },
+                )
+            }
+
+            item {
+                MagicSettingsRowCard(
+                    icon = Icons.Rounded.Info,
+                    title = "Acerca de MagicMusic",
+                    subtitle = "Versión ${BuildConfig.VERSION_NAME} • Control universal MediaSession",
+                    onClick = { showAboutDialog = true },
+                )
+            }
+
+            if (BuildConfig.DEBUG) {
+                item {
+                    MagicSettingsRowCard(
+                        icon = Icons.Rounded.ImageSearch,
+                        title = "Inspector de carátulas (Debug)",
+                        subtitle = "Estado de Coil, MediaStore loadThumbnail y SessionArtworkStabilizer",
+                        onClick = onOpenArtworkInspector,
+                        modifier = Modifier.testTag("settings_row_artwork_inspector"),
+                    )
+                }
+                item {
+                    MagicSettingsRowCard(
+                        icon = Icons.Rounded.BugReport,
+                        title = "Galería Material 3 Expressive (Debug)",
+                        subtitle = "Componentes Material 3, pruebas visuales y variantes tonales",
+                        onClick = onOpenDeveloperShowcase,
+                        modifier = Modifier.testTag("settings_row_developer"),
+                    )
+                }
             }
         }
     }
@@ -289,11 +340,13 @@ fun SettingsScreen(
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
-            title = { Text("Privacidad local") },
+            title = { Text("Qué datos usa MagicMusic") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "MagicMusic funciona íntegramente en tu dispositivo. Tus sesiones, historial local y plantillas de widgets no salen de tu teléfono ni usan cuentas en la nube.",
+                        text = "• Biblioteca local: lee solo tus archivos de audio locales (READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE en Android <=12) mediante MediaStore y Room sin subir nada a servidores.\n" +
+                            "• Sesiones activas: lee metadatos de MediaSession únicamente para mostrar títulos, carátulas y controles.\n" +
+                            "• Cuentas oficiales: los tokens OAuth de Spotify o Google/YouTube se cifran en tu dispositivo con Android Keystore + Tink AES256-GCM. MagicMusic no recolecta analíticas ni telemetría.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
                     )
@@ -373,7 +426,7 @@ fun SettingsScreen(
             title = { Text("MagicMusic") },
             text = {
                 Text(
-                    "Versión ${BuildConfig.VERSION_NAME}\n\nCentro de control musical unificado Material Design 3 con Widgets adaptables, Pantalla de bloqueo, Ajustes Rápidos y Motor Hi-Res local.",
+                    "Versión ${BuildConfig.VERSION_NAME}\n\nReproductor Hi-Res y centro musical Material Design 3 Expressive con biblioteca local indexada, widgets personalizables, pantalla de bloqueo, Ajustes Rápidos y conectores oficiales.\n\n${stringResource(R.string.trademark_disclaimer)}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },

@@ -1,0 +1,22 @@
+# Baseline Profile for MagicMusic (Material 3 Expressive)
+# Critical hot paths: Cold startup, Compose theme resolution, Library Paging scroll,
+# Coil pre-playback artwork decoding, NowPlaying progress updates, and DSP setup.
+
+HSPLcom/example/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/example/MainActivityKt;->MagicMusicRoot**
+HSPLcom/example/MainActivityKt;->MagicMusicApp**
+HSPLcom/example/ui/MagicMusicViewModel;->**
+HSPLcom/example/designsystem/MagicMusicThemeKt;->MagicMusicTheme**
+HSPLcom/example/designsystem/MaterialColorUtilitiesEngine;->**
+HSPLcom/example/designsystem/expressive/MagicExpressiveThemeKt;->**
+HSPLcom/example/designsystem/expressive/MagicExpressiveComponentsKt;->**
+HSPLcom/example/ui/screens/LibraryScreenKt;->**
+HSPLcom/example/ui/screens/PlaylistsScreenKt;->**
+HSPLcom/example/ui/screens/EqualizerScreenKt;->**
+HSPLcom/example/ui/screens/AppearanceScreenKt;->**
+HSPLcom/example/ui/components/NowPlayingDeckContentKt;->**
+HSPLcom/example/core/artwork/LocalArtworkPipeline;->**
+HSPLcom/example/core/artwork/SessionArtworkStabilizer;->**
+HSPLcom/example/core/library/LibraryRepository;->**
+HSPLcom/example/core/library/MagicLibraryDatabase**
+HSPLcom/example/core/media/MediaRepository;->**

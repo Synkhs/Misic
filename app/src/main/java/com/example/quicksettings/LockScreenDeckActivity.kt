@@ -64,6 +64,7 @@ class LockScreenDeckActivity : ComponentActivity() {
 
         setContent {
             val media by MediaRepository.mediaState.collectAsStateWithLifecycle()
+            val progress by MediaRepository.playbackProgressFlow.collectAsStateWithLifecycle()
             val playerState by MediaRepository.playerState.collectAsStateWithLifecycle()
             val sleepTimer by MediaRepository.sleepTimerState.collectAsStateWithLifecycle(initialValue = SleepTimerState())
             val audioOutputs by MediaRepository.audioOutputs.collectAsStateWithLifecycle()
@@ -142,6 +143,8 @@ class LockScreenDeckActivity : ComponentActivity() {
                         sleepTimer = sleepTimer,
                         audioOutputs = audioOutputs,
                         artworkColors = artworkColors,
+                        positionMs = progress.first,
+                        durationMs = progress.second,
                         isLockScreenMode = true,
                         isKeyguardLocked = isKeyguardLocked,
                         lockPrivacyLevel = lockConfig.lockPrivacyLevel,

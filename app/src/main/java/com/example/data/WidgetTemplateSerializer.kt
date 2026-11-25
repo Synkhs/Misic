@@ -1,8 +1,17 @@
 package com.example.data
 
+import com.example.designsystem.ColorRoleOverrides
+import com.example.designsystem.ContrastPreset
+import com.example.designsystem.DEFAULT_VIOLET_SEED_ARGB
+import com.example.designsystem.McuSchemeVariant
+import com.example.designsystem.SavedColorProfile
+import com.example.designsystem.SurfaceToneStyle
+import com.example.designsystem.ThemeMode
+
 /**
- * Pure Kotlin JSON serializer/deserializer for widget templates, local history/stats,
- * and full backup export/import without relying on Android stubbed org.json in JVM tests.
+ * Pure Kotlin JSON serializer/deserializer for widget templates, per-instance configs,
+ * saved color profiles, custom EQ presets, local history/stats, and full backups
+ * without relying on Android stubbed org.json in JVM tests.
  */
 object WidgetTemplateSerializer {
 
@@ -104,6 +113,150 @@ object WidgetTemplateSerializer {
                 lastPlayedMs = map["lastPlayedMs"]?.toLongOrNull() ?: 0L,
                 playCount = map["playCount"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
                 durationMs = map["durationMs"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+            )
+        }
+    }
+
+    fun encodeColorProfiles(profiles: List<SavedColorProfile>): String {
+        return profiles.joinToString(prefix = "[", postfix = "]", separator = ",") { p ->
+            buildString {
+                append("{")
+                append("\"id\":\"").append(escape(p.id)).append("\",")
+                append("\"name\":\"").append(escape(p.name)).append("\",")
+                append("\"seedColorArgb\":").append(p.seedColorArgb).append(",")
+                append("\"variant\":\"").append(p.variant.name).append("\",")
+                append("\"themeMode\":\"").append(p.themeMode.name).append("\",")
+                append("\"surfaceTone\":\"").append(p.surfaceToneStyle.name).append("\",")
+                append("\"contrast\":\"").append(p.contrastPreset.name).append("\",")
+                append("\"pureAmoled\":").append(p.pureAmoled).append(",")
+                append("\"primaryOv\":").append(p.overrides.primaryArgb ?: 0L).append(",")
+                append("\"secondaryOv\":").append(p.overrides.secondaryArgb ?: 0L).append(",")
+                append("\"tertiaryOv\":").append(p.overrides.tertiaryArgb ?: 0L).append(",")
+                append("\"surfaceOv\":").append(p.overrides.surfaceArgb ?: 0L)
+                append("}")
+            }
+        }
+    }
+
+    fun decodeColorProfiles(json: String): List<SavedColorProfile> {
+        val trimmed = json.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return splitTopLevelObjects(trimmed).mapNotNull { obj ->
+            val m = parseFlatJsonObject(obj) ?: return@mapNotNull null
+            val id = m["id"]?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val name = m["name"]?.takeIf { it.isNotBlank() } ?: "Perfil"
+            SavedColorProfile(
+                id = id,
+                name = name,
+                seedColorArgb = m["seedColorArgb"]?.toLongOrNull() ?: DEFAULT_VIOLET_SEED_ARGB,
+                variant = parseEnum(m["variant"], McuSchemeVariant.TONAL_SPOT),
+                themeMode = parseEnum(m["themeMode"], ThemeMode.DARK),
+                surfaceToneStyle = parseEnum(m["surfaceTone"], SurfaceToneStyle.TONAL),
+                contrastPreset = parseEnum(m["contrast"], ContrastPreset.STANDARD),
+                pureAmoled = m["pureAmoled"]?.toBooleanStrictOrNull() ?: false,
+                overrides = ColorRoleOverrides(
+                    primaryArgb = m["primaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    secondaryArgb = m["secondaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    tertiaryArgb = m["tertiaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    surfaceArgb = m["surfaceOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                ),
+            )
+        }
+    }
+
+    fun encodeWidgetInstances(instances: Map<Int, WidgetInstanceConfig>): String {
+        return instances.values.joinToString(prefix = "[", postfix = "]", separator = ",") { w ->
+            buildString {
+                append("{")
+                append("\"appWidgetId\":").append(w.appWidgetId).append(",")
+                append("\"format\":\"").append(w.format.name).append("\",")
+                append("\"style\":\"").append(w.style.name).append("\",")
+                append("\"colorSource\":\"").append(w.colorSource.name).append("\",")
+                append("\"seedColorArgb\":").append(w.seedColorArgb).append(",")
+                append("\"schemeVariant\":\"").append(w.schemeVariant.name).append("\",")
+                append("\"themeMode\":\"").append(w.themeMode.name).append("\",")
+                append("\"contrastLevel\":\"").append(w.contrastLevel.name).append("\",")
+                append("\"primaryOv\":").append(w.roleOverrides.primaryArgb ?: 0L).append(",")
+                append("\"secondaryOv\":").append(w.roleOverrides.secondaryArgb ?: 0L).append(",")
+                append("\"tertiaryOv\":").append(w.roleOverrides.tertiaryArgb ?: 0L).append(",")
+                append("\"surfaceOv\":").append(w.roleOverrides.surfaceArgb ?: 0L).append(",")
+                append("\"cornerRadiusDp\":").append(w.cornerRadiusDp).append(",")
+                append("\"containerOpacity\":").append(w.containerOpacity).append(",")
+                append("\"showProgressBar\":").append(w.showProgressBar).append(",")
+                append("\"showServiceBadge\":").append(w.showServiceBadge).append(",")
+                append("\"showCompactHeader\":").append(w.showCompactHeader).append(",")
+                append("\"leftCustomAction\":\"").append(w.leftCustomAction.name).append("\",")
+                append("\"rightCustomAction\":\"").append(w.rightCustomAction.name).append("\"")
+                append("}")
+            }
+        }
+    }
+
+    fun decodeWidgetInstances(json: String): Map<Int, WidgetInstanceConfig> {
+        val trimmed = json.trim()
+        if (trimmed.isBlank()) return emptyMap()
+        return splitTopLevelObjects(trimmed).mapNotNull { obj ->
+            val m = parseFlatJsonObject(obj) ?: return@mapNotNull null
+            val id = m["appWidgetId"]?.toIntOrNull() ?: return@mapNotNull null
+            id to WidgetInstanceConfig(
+                appWidgetId = id,
+                format = parseEnum(m["format"], WidgetFormat.CARD_4X2),
+                style = migrateWidgetStyleRaw(m["style"]),
+                colorSource = parseEnum(m["colorSource"], WidgetColorSource.FOLLOW_APP),
+                seedColorArgb = m["seedColorArgb"]?.toLongOrNull() ?: DEFAULT_VIOLET_SEED_ARGB,
+                schemeVariant = parseEnum(m["schemeVariant"], McuSchemeVariant.TONAL_SPOT),
+                themeMode = parseEnum(m["themeMode"], ThemeMode.SYSTEM),
+                contrastLevel = parseEnum(m["contrastLevel"], ContrastPreset.STANDARD),
+                roleOverrides = ColorRoleOverrides(
+                    primaryArgb = m["primaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    secondaryArgb = m["secondaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    tertiaryArgb = m["tertiaryOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                    surfaceArgb = m["surfaceOv"]?.toLongOrNull()?.takeIf { it != 0L },
+                ),
+                cornerRadiusDp = m["cornerRadiusDp"]?.toIntOrNull()?.coerceIn(12, 32) ?: 24,
+                containerOpacity = m["containerOpacity"]?.toFloatOrNull()?.coerceIn(0.45f, 1.0f) ?: 0.94f,
+                showProgressBar = m["showProgressBar"]?.toBooleanStrictOrNull() ?: true,
+                showServiceBadge = m["showServiceBadge"]?.toBooleanStrictOrNull() ?: true,
+                showCompactHeader = m["showCompactHeader"]?.toBooleanStrictOrNull() ?: true,
+                leftCustomAction = parseEnum(m["leftCustomAction"], CustomControlAction.REWIND_15),
+                rightCustomAction = parseEnum(m["rightCustomAction"], CustomControlAction.FORWARD_15),
+            )
+        }.toMap()
+    }
+
+    fun encodeCustomEqPresets(presets: List<CustomEqPreset>): String {
+        return presets.joinToString(prefix = "[", postfix = "]", separator = ",") { p ->
+            buildString {
+                append("{")
+                append("\"id\":\"").append(escape(p.id)).append("\",")
+                append("\"name\":\"").append(escape(p.name)).append("\",")
+                append("\"bandsCsv\":\"").append(p.bandGainsDb.joinToString(",")).append("\",")
+                append("\"bassBoost\":").append(p.bassBoostStrength).append(",")
+                append("\"virtualizer\":").append(p.virtualizerStrength).append(",")
+                append("\"loudness\":").append(p.loudnessGainMb).append(",")
+                append("\"preamp\":").append(p.preampGainDb)
+                append("}")
+            }
+        }
+    }
+
+    fun decodeCustomEqPresets(json: String): List<CustomEqPreset> {
+        val trimmed = json.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return splitTopLevelObjects(trimmed).mapNotNull { obj ->
+            val m = parseFlatJsonObject(obj) ?: return@mapNotNull null
+            val id = m["id"]?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val name = m["name"]?.takeIf { it.isNotBlank() } ?: "Personalizado"
+            val bands = m["bandsCsv"].orEmpty().split(",").mapNotNull { it.toFloatOrNull()?.coerceIn(-12f, 12f) }
+            val fixed = if (bands.size == 5) bands else listOf(0f, 0f, 0f, 0f, 0f)
+            CustomEqPreset(
+                id = id,
+                name = name,
+                bandGainsDb = fixed,
+                bassBoostStrength = (m["bassBoost"]?.toIntOrNull() ?: 0).coerceIn(0, 1000),
+                virtualizerStrength = (m["virtualizer"]?.toIntOrNull() ?: 0).coerceIn(0, 1000),
+                loudnessGainMb = (m["loudness"]?.toIntOrNull() ?: 0).coerceIn(0, 1000),
+                preampGainDb = (m["preamp"]?.toFloatOrNull() ?: 0f).coerceIn(-6f, 6f),
             )
         }
     }

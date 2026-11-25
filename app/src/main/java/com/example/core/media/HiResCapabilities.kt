@@ -50,9 +50,9 @@ object HiResCapabilities {
 
         val activeDevice = usbDac ?: bluetooth ?: wired ?: speaker
         val category = when {
-            usbDac != null -> AudioOutputCategory.USB_DAC
+            usbDac != null -> AudioOutputCategory.WIRED
             bluetooth != null -> AudioOutputCategory.BLUETOOTH
-            wired != null -> AudioOutputCategory.WIRED_HEADSET
+            wired != null -> AudioOutputCategory.WIRED
             else -> AudioOutputCategory.SPEAKER
         }
         val devName = activeDevice?.productName?.toString()?.takeIf { it.isNotBlank() } ?: category.label
@@ -72,7 +72,7 @@ object HiResCapabilities {
             bitPerfect -> "USB DAC compatible detectado en Android 14+: ruta PCM de alta resolución sin conversión agresiva disponible."
             usbAttached -> "DAC USB detectado (${maxRate / 1000} kHz máx.). Android procesa la mezcla a ${nativeSr / 1000} kHz con punto flotante."
             category == AudioOutputCategory.BLUETOOTH -> "Salida Bluetooth ($devName). El códec inalámbrico aplica su propio muestreo hasta ${maxRate / 1000} kHz."
-            category == AudioOutputCategory.WIRED_HEADSET -> "Auriculares por cable. Salida interna a ${nativeSr / 1000} kHz / ${if (supports24Bit) "24-bit flotante" else "16-bit"}."
+            category == AudioOutputCategory.WIRED -> "Auriculares por cable. Salida interna a ${nativeSr / 1000} kHz / ${if (supports24Bit) "24-bit flotante" else "16-bit"}."
             else -> "Altavoz integrado a ${nativeSr / 1000} kHz. Conecta unos auriculares o USB DAC para aprovechar mayor rango dinámico."
         }
 

@@ -20,6 +20,9 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    manifestPlaceholders["appAuthRedirectScheme"] = "com.aistudio.magicmusic.hnm10x"
+    buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${System.getenv("SPOTIFY_CLIENT_ID") ?: ""}\"")
+    buildConfigField("boolean", "ENABLE_APPLE_MUSIC", "true")
   }
 
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
@@ -42,8 +45,9 @@ android {
 
   buildTypes {
     release {
-      isCrunchPngs = false
-      isMinifyEnabled = false
+      isCrunchPngs = true
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
@@ -64,6 +68,11 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  bundle {
+    density { enableSplit = true }
+    abi { enableSplit = true }
+    language { enableSplit = true }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
@@ -94,6 +103,9 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.material3.window.size)
+  implementation(libs.androidx.graphics.shapes)
+  implementation(libs.material.color.utilities)
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
@@ -112,27 +124,21 @@ dependencies {
   implementation(libs.androidx.media3.exoplayer)
   implementation(libs.androidx.media3.session)
   implementation(libs.androidx.media3.common)
+  implementation(libs.androidx.work.runtime.ktx)
+  implementation(libs.androidx.browser)
+  implementation(libs.appauth)
+  implementation(libs.tink.android)
   implementation(libs.coil.compose)
-  // implementation(libs.converter.moshi)
-  // implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
-
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
-  // implementation(libs.firebase.appcheck.recaptcha)
-  // implementation(libs.firebase.appcheck.debug)
+  implementation(libs.converter.moshi)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  // implementation(libs.logging.interceptor)
-  // implementation(libs.moshi.kotlin)
-  // implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
-  // implementation(libs.retrofit)
+  implementation(libs.logging.interceptor)
+  implementation(libs.moshi.kotlin)
+  implementation(libs.okhttp)
+  implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

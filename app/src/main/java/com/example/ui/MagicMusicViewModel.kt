@@ -2,43 +2,77 @@ package com.example.ui
 
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.example.R
+import com.example.core.accounts.MusicAccountsCoordinator
+import com.example.core.accounts.MusicSourceId
+import com.example.core.accounts.SourceAccountSnapshot
+import com.example.core.accounts.SourceTrackSummary
+import com.example.core.artwork.LocalArtworkDiagnostics
+import com.example.core.artwork.LocalArtworkPipeline
+import com.example.core.artwork.SessionArtworkDebugState
 import com.example.core.compat.AndroidVersionCompat
 import com.example.core.compat.CompatActionResult
 import com.example.core.compat.OemBatteryGuide
 import com.example.core.compat.OemCompat
+import com.example.core.library.AlbumSummary
+import com.example.core.library.ArtistSummary
+import com.example.core.library.FolderSummary
+import com.example.core.library.LibraryRepository
+import com.example.core.library.LibraryScanWorker
+import com.example.core.library.LocalTrackEntity
+import com.example.core.library.PlaylistWithSummary
+import com.example.core.library.TrackBookmarkEntity
+import com.example.core.media.DspCapabilityReport
 import com.example.core.media.HealthCheckId
+import com.example.core.media.HiResHardwareReport
 import com.example.core.media.ListenerConnectionState
 import com.example.core.media.MediaRepository
 import com.example.core.media.PlayerState
 import com.example.core.media.SleepTimerState
 import com.example.core.media.SystemHealthSummary
+import com.example.data.AudioOutputCategory
 import com.example.data.AudioOutputDevice
 import com.example.data.CustomControlAction
+import com.example.data.CustomEqPreset
 import com.example.data.EqualizerConfig
 import com.example.data.InstalledServiceStatus
+import com.example.data.LibrarySortOption
+import com.example.data.LibrarySourceFilter
 import com.example.data.LocalListeningStats
 import com.example.data.LockAndQsConfig
+import com.example.data.LockPrivacyLevel
 import com.example.data.MediaSessionPreferences
 import com.example.data.PreferencesRepository
 import com.example.data.QsTileMode
 import com.example.data.QuickTileType
-import com.example.data.LockPrivacyLevel
 import com.example.data.SessionPriorityRule
 import com.example.data.UnifiedMediaState
 import com.example.data.WidgetConfig
 import com.example.data.WidgetFormat
+import com.example.data.WidgetInstanceConfig
 import com.example.data.WidgetStyle
 import com.example.data.WidgetTemplate
 import com.example.designsystem.ArtworkPaletteColors
 import com.example.designsystem.ArtworkPaletteExtractor
+import com.example.designsystem.ColorRoleOverrides
+import com.example.designsystem.ContrastPreset
+import com.example.designsystem.McuSchemeVariant
+import com.example.designsystem.SavedColorProfile
 import com.example.designsystem.SurfaceToneStyle
 import com.example.designsystem.ThemeMode
 import com.example.designsystem.ThemePreferences
 import com.example.designsystem.VioletSeedColor
+import com.example.designsystem.expressive.ArtworkShapeStyle
+import com.example.designsystem.expressive.GeometryPreset
+import com.example.designsystem.expressive.MiniPlayerStyle
+import com.example.designsystem.expressive.NavLabelVisibility
 import com.example.media.MagicMediaBridgeService
 import com.example.quicksettings.LockScreenDeckActivity
 import com.example.quicksettings.MagicNextTrackTileService
@@ -48,10 +82,16 @@ import com.example.widget.MagicWidgetCapsuleProvider
 import com.example.widget.MagicWidgetCardProvider
 import com.example.widget.MagicWidgetMiniProvider
 import com.example.widget.MagicWidgetSquareProvider
+import com.example.widget.MagicWidgetUpdater
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,7 +108,9 @@ data class MagicMusicUiState(
     val sleepTimer: SleepTimerState = SleepTimerState(),
     val systemHealth: SystemHealthSummary = SystemHealthSummary(),
     val audioOutputs: List<AudioOutputDevice> = emptyList(),
+    val hiResReport: HiResHardwareReport = HiResHardwareReport(),
     val hasListenerPermission: Boolean = false,
+    val hasAudioLibraryPermission: Boolean = false,
     val hasPostNotificationsPermission: Boolean = true,
     val onboardingCompleted: Boolean = false,
     val listenerState: ListenerConnectionState = ListenerConnectionState.PERMISSION_MISSING,
@@ -76,27 +118,56 @@ data class MagicMusicUiState(
     val oemBatteryGuide: OemBatteryGuide? = null,
     val bridgeRunning: Boolean = false,
     val searchQuery: String = "",
+    val librarySortOption: LibrarySortOption = LibrarySortOption.TITLE,
+    val librarySourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    val isLibraryScanning: Boolean = false,
+    val localTrackCount: Int = 0,
     val feedbackMessage: String? = null,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MagicMusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefsRepo = PreferencesRepository(application)
+    private val libraryRepo = LibraryRepository(application)
+    private val accountsCoordinator = MusicAccountsCoordinator(application)
+
     private val _feedbackMessage = MutableStateFlow<String?>(null)
     private val _searchQuery = MutableStateFlow("")
+    private val _librarySort = MutableStateFlow(LibrarySortOption.TITLE)
+    private val _librarySourceFilter = MutableStateFlow(LibrarySourceFilter.ALL)
+    private val _isLibraryScanning = MutableStateFlow(false)
+    private val _hasAudioPermission = MutableStateFlow(libraryRepo.hasAudioPermission())
+    private val _spotifySearchResults = MutableStateFlow<List<SourceTrackSummary>>(emptyList())
 
     init {
         MediaRepository.init(application)
+        viewModelScope.launch {
+            accountsCoordinator.restoreAll()
+            if (libraryRepo.hasAudioPermission()) {
+                LibraryScanWorker.enqueueIncremental(application)
+            }
+        }
+        viewModelScope.launch {
+            accountsCoordinator.lastAccountMessage.collect { msg ->
+                if (!msg.isNullOrBlank()) {
+                    _feedbackMessage.value = msg
+                    accountsCoordinator.clearMessage()
+                }
+            }
+        }
     }
 
-    // Isolated from media ticks so theme switches never re-emit playback/service state
+    // Isolated high-frequency progress stream so ticks don't trigger full UI recompositions
+    val playbackProgressFlow: StateFlow<Pair<Long, Long>> = MediaRepository.playbackProgressFlow
+
+    // Isolated ThemePreferences stream
     val themePreferences: StateFlow<ThemePreferences> = prefsRepo.themePreferencesFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ThemePreferences(),
     )
 
-    @Suppress("OPT_IN_USAGE")
     val artworkColors: StateFlow<ArtworkPaletteColors> = MediaRepository.mediaState
         .mapLatest { media ->
             ArtworkPaletteExtractor.extractCached(
@@ -111,6 +182,85 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             initialValue = ArtworkPaletteExtractor.deriveFromFallbackSeed(VioletSeedColor),
         )
 
+    // Library Paging 3 & Room streams
+    val pagedLibraryTracks: Flow<PagingData<LocalTrackEntity>> = combine(
+        _searchQuery,
+        _librarySort,
+    ) { q, sort -> q to sort }
+        .flatMapLatest { (q, sort) ->
+            libraryRepo.pagedTracks(q, sort)
+        }
+        .cachedIn(viewModelScope)
+
+    val albumsFlow: StateFlow<List<AlbumSummary>> = _searchQuery
+        .flatMapLatest { q -> libraryRepo.observeAlbums(q) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val artistsFlow: StateFlow<List<ArtistSummary>> = _searchQuery
+        .flatMapLatest { q -> libraryRepo.observeArtists(q) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val foldersFlow: StateFlow<List<FolderSummary>> = _searchQuery
+        .flatMapLatest { q -> libraryRepo.observeFolders(q) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val playlistsFlow: StateFlow<List<PlaylistWithSummary>> = libraryRepo.observePlaylists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val mostPlayedFlow: StateFlow<List<LocalTrackEntity>> = libraryRepo.observeMostPlayed(25)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val recentlyAddedFlow: StateFlow<List<LocalTrackEntity>> = libraryRepo.observeRecentlyAdded(25)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val favoritesFlow: StateFlow<List<LocalTrackEntity>> = libraryRepo.observeFavorites()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val recentlyPlayedLocalFlow: StateFlow<List<LocalTrackEntity>> = libraryRepo.observeRecentlyPlayed(12)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val currentTrackBookmarksFlow: StateFlow<List<TrackBookmarkEntity>> = MediaRepository.mediaState
+        .flatMapLatest { media ->
+            val key = media.trackKey
+            if (key.isBlank() || !media.hasActiveMedia) flowOf(emptyList())
+            else libraryRepo.observeBookmarks(key)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Color studio, widget instances & custom EQ presets
+    val savedColorProfilesFlow: StateFlow<List<SavedColorProfile>> = prefsRepo.savedColorProfilesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val widgetInstancesFlow: StateFlow<Map<Int, WidgetInstanceConfig>> = prefsRepo.widgetInstancesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    val customEqPresetsFlow: StateFlow<List<CustomEqPreset>> = prefsRepo.customEqPresetsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Official Accounts
+    val spotifyAccountState: StateFlow<SourceAccountSnapshot> = accountsCoordinator.spotify.state
+    val appleMusicAccountState: StateFlow<SourceAccountSnapshot> = accountsCoordinator.appleMusic.state
+    val youtubeAccountState: StateFlow<SourceAccountSnapshot> = accountsCoordinator.youtube.state
+    val spotifySearchResults: StateFlow<List<SourceTrackSummary>> = _spotifySearchResults.asStateFlow()
+
+    // Artwork diagnostics
+    val localArtworkDiagnostics: StateFlow<LocalArtworkDiagnostics> = LocalArtworkPipeline.diagnostics
+    val sessionArtworkDebug: StateFlow<SessionArtworkDebugState> = MediaRepository.sessionArtworkDebug
+
+    fun currentDspCapabilityReport(): DspCapabilityReport = MediaRepository.currentDspCapabilityReport()
+
+    fun pagedTracksForAlbum(albumId: Long): Flow<PagingData<LocalTrackEntity>> =
+        libraryRepo.pagedTracksByAlbum(albumId).cachedIn(viewModelScope)
+
+    fun pagedTracksForArtist(artistId: Long): Flow<PagingData<LocalTrackEntity>> =
+        libraryRepo.pagedTracksByArtist(artistId).cachedIn(viewModelScope)
+
+    fun pagedTracksForFolder(folderPath: String): Flow<PagingData<LocalTrackEntity>> =
+        libraryRepo.pagedTracksByFolder(folderPath).cachedIn(viewModelScope)
+
+    fun observePlaylistTracks(playlistId: Long): Flow<List<LocalTrackEntity>> =
+        libraryRepo.observePlaylistTracks(playlistId)
+
     private data class SystemSnapshot(
         val hasListener: Boolean,
         val hasNotifications: Boolean,
@@ -119,8 +269,14 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
         val bridgeRunning: Boolean,
         val systemHealth: SystemHealthSummary,
         val audioOutputs: List<AudioOutputDevice>,
+        val hiResReport: HiResHardwareReport,
         val sleepTimer: SleepTimerState,
         val searchQuery: String,
+        val sortOption: LibrarySortOption,
+        val sourceFilter: LibrarySourceFilter,
+        val isScanning: Boolean,
+        val hasAudioPerm: Boolean,
+        val trackCount: Int,
         val feedback: String?,
     )
 
@@ -144,21 +300,29 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
         listOf(hasListener, hasNotif, services, oemGuide, bridge)
     }
 
-    private val extrasFlow = combine(
+    private val audioAndQueryFlow = combine(
         MediaRepository.systemHealth,
         MediaRepository.audioOutputs,
+        MediaRepository.hiResReport,
         MediaRepository.sleepTimerState,
         _searchQuery,
-        _feedbackMessage,
-    ) { health, outputs, timer, query, feedback ->
-        listOf(health, outputs, timer, query, feedback)
+    ) { health, outputs, hiRes, timer, query ->
+        listOf(health, outputs, hiRes, timer, query)
+    }
+
+    private val libraryMetaFlow = combine(
+        combine(_librarySort, _librarySourceFilter, _isLibraryScanning) { s, f, scan -> Triple(s, f, scan) },
+        combine(_hasAudioPermission, libraryRepo.observeTrackCount(), _feedbackMessage) { perm, count, msg -> Triple(perm, count, msg) },
+    ) { t1, t2 ->
+        listOf<Any?>(t1.first, t1.second, t1.third, t2.first, t2.second, t2.third)
     }
 
     @Suppress("UNCHECKED_CAST")
     private val systemSnapshotFlow = combine(
         permissionsAndServicesFlow,
-        extrasFlow,
-    ) { base, ext ->
+        audioAndQueryFlow,
+        libraryMetaFlow,
+    ) { base, ext, lib ->
         SystemSnapshot(
             hasListener = base[0] as Boolean,
             hasNotifications = base[1] as Boolean,
@@ -167,9 +331,15 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             bridgeRunning = base[4] as Boolean,
             systemHealth = ext[0] as SystemHealthSummary,
             audioOutputs = ext[1] as List<AudioOutputDevice>,
-            sleepTimer = ext[2] as SleepTimerState,
-            searchQuery = ext[3] as String,
-            feedback = ext[4] as String?,
+            hiResReport = ext[2] as HiResHardwareReport,
+            sleepTimer = ext[3] as SleepTimerState,
+            searchQuery = ext[4] as String,
+            sortOption = lib[0] as LibrarySortOption,
+            sourceFilter = lib[1] as LibrarySourceFilter,
+            isScanning = lib[2] as Boolean,
+            hasAudioPerm = lib[3] as Boolean,
+            trackCount = lib[4] as Int,
+            feedback = lib[5] as String?,
         )
     }
 
@@ -223,7 +393,9 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             sleepTimer = sys.sleepTimer,
             systemHealth = sys.systemHealth,
             audioOutputs = sys.audioOutputs,
+            hiResReport = sys.hiResReport,
             hasListenerPermission = sys.hasListener,
+            hasAudioLibraryPermission = sys.hasAudioPerm,
             hasPostNotificationsPermission = sys.hasNotifications,
             onboardingCompleted = cfg.onboardingCompleted,
             listenerState = player.listenerState,
@@ -231,6 +403,10 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             oemBatteryGuide = sys.oemGuide,
             bridgeRunning = sys.bridgeRunning,
             searchQuery = sys.searchQuery,
+            librarySortOption = sys.sortOption,
+            librarySourceFilter = sys.sourceFilter,
+            isLibraryScanning = sys.isScanning,
+            localTrackCount = sys.trackCount,
             feedbackMessage = sys.feedback ?: player.lastError,
         )
     }.stateIn(
@@ -240,6 +416,7 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
     )
 
     fun refreshSystemState() {
+        _hasAudioPermission.value = libraryRepo.hasAudioPermission()
         MediaRepository.refreshPermissionsAndServices()
         MediaRepository.refreshAudioOutputs()
     }
@@ -257,13 +434,37 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
         _searchQuery.value = query
     }
 
+    fun setLibrarySortOption(sort: LibrarySortOption) {
+        _librarySort.value = sort
+    }
+
+    fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        _librarySourceFilter.value = filter
+    }
+
+    fun scanLocalLibraryNow() {
+        val ctx = getApplication<Application>()
+        _hasAudioPermission.value = libraryRepo.hasAudioPermission()
+        if (!_hasAudioPermission.value) {
+            _feedbackMessage.value = "Concede acceso a audio para escanear música del dispositivo"
+            return
+        }
+        viewModelScope.launch {
+            _isLibraryScanning.value = true
+            val count = runCatching { libraryRepo.syncMediaStoreIncremental() }.getOrDefault(0)
+            _isLibraryScanning.value = false
+            LibraryScanWorker.enqueueIncremental(ctx)
+            _feedbackMessage.value = "Biblioteca actualizada: $count pistas locales"
+        }
+    }
+
     fun completeOnboarding() {
         viewModelScope.launch {
             prefsRepo.setOnboardingCompleted(true)
         }
     }
 
-    // Material 3 Theme Preferences (real-time updates)
+    // Material 3 & Expressive Theme / Estilo Preferences
     fun setUseDynamicColor(enabled: Boolean) {
         viewModelScope.launch {
             prefsRepo.updateThemePreferences { it.copy(useDynamicColor = enabled) }
@@ -298,11 +499,20 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
     fun setSeedColor(argb: Long) {
         viewModelScope.launch {
             prefsRepo.updateThemePreferences {
-                it.copy(
-                    useDynamicColor = false,
-                    seedColorArgb = argb,
-                )
+                it.copy(useDynamicColor = false, seedColorArgb = argb)
             }
+        }
+    }
+
+    fun setSchemeVariant(variant: McuSchemeVariant) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(schemeVariant = variant) }
+        }
+    }
+
+    fun setContrastPreset(preset: ContrastPreset) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(contrastLevel = preset) }
         }
     }
 
@@ -324,6 +534,138 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun setUseExpressiveM3(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(useExpressiveM3 = enabled) }
+        }
+    }
+
+    fun setHapticFeedback(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(hapticFeedbackEnabled = enabled) }
+        }
+    }
+
+    fun setGeometryPreset(preset: GeometryPreset) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(geometryPreset = preset) }
+        }
+    }
+
+    fun setArtworkShape(shape: ArtworkShapeStyle) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(artworkShape = shape) }
+        }
+    }
+
+    fun setNavLabelVisibility(visibility: NavLabelVisibility) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(navLabelVisibility = visibility) }
+        }
+    }
+
+    fun setMiniPlayerStyle(style: MiniPlayerStyle) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(miniPlayerStyle = style) }
+        }
+    }
+
+    fun setLibraryGridColumns(columns: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(libraryGridColumns = columns.coerceIn(2, 3)) }
+        }
+    }
+
+    fun setLyricsAutoScroll(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(lyricsAutoScroll = enabled) }
+        }
+    }
+
+    fun setLyricsFontScale(scale: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(lyricsFontScale = scale.coerceIn(0.85f, 1.4f)) }
+        }
+    }
+
+    fun setRoleOverrides(overrides: ColorRoleOverrides) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { it.copy(useDynamicColor = false, roleOverrides = overrides) }
+        }
+    }
+
+    fun resetRoleOverrides() {
+        setRoleOverrides(ColorRoleOverrides())
+    }
+
+    fun saveColorProfile(name: String) {
+        viewModelScope.launch {
+            prefsRepo.saveColorProfile(name, themePreferences.value)
+            _feedbackMessage.value = "Paleta guardada en tu colección"
+        }
+    }
+
+    fun deleteColorProfile(profileId: String) {
+        viewModelScope.launch {
+            prefsRepo.deleteColorProfile(profileId)
+            _feedbackMessage.value = "Paleta eliminada"
+        }
+    }
+
+    fun applyColorProfile(profile: SavedColorProfile) {
+        viewModelScope.launch {
+            prefsRepo.updateThemePreferences { cur ->
+                cur.copy(
+                    useDynamicColor = false,
+                    seedColorArgb = profile.seedColorArgb,
+                    schemeVariant = profile.variant,
+                    themeMode = profile.themeMode,
+                    surfaceToneStyle = profile.surfaceToneStyle,
+                    contrastLevel = profile.contrastPreset,
+                    pureAmoledBlack = profile.pureAmoled,
+                    roleOverrides = profile.overrides,
+                )
+            }
+            _feedbackMessage.value = "Paleta '${profile.name}' aplicada"
+        }
+    }
+
+    fun exportColorProfilesJson(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            onResult(prefsRepo.exportColorProfilesJson())
+        }
+    }
+
+    fun importColorProfilesJson(raw: String) {
+        viewModelScope.launch {
+            val count = prefsRepo.importColorProfilesJson(raw)
+            _feedbackMessage.value = if (count > 0) "Se importaron $count paletas" else "JSON de paletas no válido"
+        }
+    }
+
+    fun updateWidgetInstance(appWidgetId: Int, transform: (WidgetInstanceConfig) -> WidgetInstanceConfig) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            prefsRepo.updateWidgetInstanceConfig(appWidgetId, transform)
+            MagicWidgetUpdater.updateAllWidgets(ctx)
+        }
+    }
+
+    fun resetWidgetInstanceToApp(appWidgetId: Int) {
+        val theme = themePreferences.value
+        updateWidgetInstance(appWidgetId) { cur ->
+            cur.copy(
+                colorSource = com.example.data.WidgetColorSource.FOLLOW_APP,
+                seedColorArgb = theme.seedColorArgb,
+                schemeVariant = theme.schemeVariant,
+                themeMode = theme.themeMode,
+                contrastLevel = theme.contrastLevel,
+                roleOverrides = theme.roleOverrides,
+            )
+        }
+        _feedbackMessage.value = "Widget #$appWidgetId sincronizado con la app"
+    }
+
     // Playback controls
     fun playPause() = MediaRepository.playPause()
     fun next() = MediaRepository.next()
@@ -336,20 +678,220 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
     fun toggleRepeat() = MediaRepository.toggleRepeat()
     fun skipToQueueItem(queueId: Long) = MediaRepository.skipToQueueItem(queueId)
     fun reorderLocalQueue(fromIndex: Int, toIndex: Int) = MediaRepository.reorderLocalQueue(fromIndex, toIndex)
+    fun clearLocalQueue() = MediaRepository.clearLocalQueue()
     fun executeCustomAction(action: CustomControlAction) = MediaRepository.executeCustomAction(action)
     fun setVolumePercent(percent: Int) = MediaRepository.setMusicVolumePercent(percent)
+
+    // Library playback & CRUD
+    fun playLocalTracks(tracks: List<LocalTrackEntity>, startIndex: Int = 0, shuffle: Boolean = false) {
+        MediaRepository.playLocalTracks(tracks, startIndex, shuffle)
+    }
+
+    fun shuffleAllLocalTracks() {
+        viewModelScope.launch {
+            val all = libraryRepo.getAllTracksSnapshot()
+            if (all.isNotEmpty()) {
+                MediaRepository.playLocalTracks(all, startIndex = 0, shuffle = true)
+            } else {
+                MediaRepository.toggleShuffle()
+                _feedbackMessage.value = "Escanea tu biblioteca para reproducir pistas locales en aleatorio"
+            }
+        }
+    }
+
+    fun playAlbum(albumId: Long) {
+        viewModelScope.launch {
+            val tracks = libraryRepo.getAlbumTracksSnapshot(albumId)
+            if (tracks.isNotEmpty()) MediaRepository.playLocalTracks(tracks, 0, false)
+        }
+    }
+
+    fun playArtist(artistId: Long) {
+        viewModelScope.launch {
+            val tracks = libraryRepo.getArtistTracksSnapshot(artistId)
+            if (tracks.isNotEmpty()) MediaRepository.playLocalTracks(tracks, 0, false)
+        }
+    }
+
+    fun playFolder(folderPath: String) {
+        viewModelScope.launch {
+            val tracks = libraryRepo.getFolderTracksSnapshot(folderPath)
+            if (tracks.isNotEmpty()) MediaRepository.playLocalTracks(tracks, 0, false)
+        }
+    }
+
+    fun playPlaylist(playlistId: Long, shuffle: Boolean = false) {
+        viewModelScope.launch {
+            val tracks = libraryRepo.getPlaylistTracksSnapshot(playlistId)
+            if (tracks.isNotEmpty()) {
+                MediaRepository.playLocalTracks(tracks, 0, shuffle)
+            } else {
+                _feedbackMessage.value = "Esta lista todavía no tiene pistas"
+            }
+        }
+    }
+
+    fun playSmartPlaylist(kind: String, shuffle: Boolean = false) {
+        viewModelScope.launch {
+            val tracks = when (kind) {
+                "most_played" -> libraryRepo.getMostPlayedSnapshot()
+                "recent" -> libraryRepo.getRecentlyAddedSnapshot()
+                "favorites" -> libraryRepo.getFavoritesSnapshot()
+                else -> libraryRepo.getAllTracksSnapshot()
+            }
+            if (tracks.isNotEmpty()) {
+                MediaRepository.playLocalTracks(tracks, 0, shuffle)
+            } else {
+                _feedbackMessage.value = "Todavía no hay pistas para esta lista inteligente"
+            }
+        }
+    }
+
+    fun toggleLocalTrackFavorite(track: LocalTrackEntity) {
+        viewModelScope.launch {
+            libraryRepo.setTrackFavorite(track.id, !track.isFavorite)
+        }
+    }
+
+    fun shareLocalTrack(track: LocalTrackEntity) {
+        val ctx = getApplication<Application>()
+        val intent = libraryRepo.buildShareTrackIntent(track)
+        val chooser = Intent.createChooser(intent, "Compartir ${track.title}").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { ctx.startActivity(chooser) }
+            .onFailure { _feedbackMessage.value = "No se encontró una app para compartir" }
+    }
+
+    fun createPlaylist(name: String) {
+        viewModelScope.launch {
+            libraryRepo.createPlaylist(name)
+            _feedbackMessage.value = "Lista '$name' creada"
+        }
+    }
+
+    fun renamePlaylist(playlistId: Long, newName: String) {
+        viewModelScope.launch {
+            libraryRepo.renamePlaylist(playlistId, newName)
+            _feedbackMessage.value = "Lista renombrada"
+        }
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            libraryRepo.deletePlaylist(playlistId)
+            _feedbackMessage.value = "Lista eliminada"
+        }
+    }
+
+    fun addLocalTrackToPlaylist(playlistId: Long, trackId: Long) {
+        viewModelScope.launch {
+            libraryRepo.addTrackToPlaylist(playlistId, trackId)
+            _feedbackMessage.value = "Pista añadida a la lista"
+        }
+    }
+
+    fun removeLocalTrackFromPlaylist(playlistId: Long, trackId: Long) {
+        viewModelScope.launch {
+            libraryRepo.removeTrackFromPlaylist(playlistId, trackId)
+        }
+    }
+
+    fun reorderPlaylistTracks(playlistId: Long, orderedTrackIds: List<Long>) {
+        viewModelScope.launch {
+            libraryRepo.reorderPlaylistTracks(playlistId, orderedTrackIds)
+        }
+    }
+
+    fun addTrackBookmark(label: String, customPositionMs: Long? = null) {
+        val media = MediaRepository.mediaState.value
+        if (!media.hasActiveMedia) return
+        val pos = customPositionMs ?: MediaRepository.playbackProgressFlow.value.first.coerceAtLeast(media.positionMs)
+        viewModelScope.launch {
+            libraryRepo.addBookmark(
+                trackKey = media.trackKey,
+                positionMs = pos,
+                label = label.ifBlank { "Marca ${com.example.ui.components.formatTimeMs(pos)}" },
+            )
+            _feedbackMessage.value = "Marca guardada en ${com.example.ui.components.formatTimeMs(pos)}"
+        }
+    }
+
+    fun deleteTrackBookmark(bookmarkId: Long) {
+        viewModelScope.launch {
+            libraryRepo.deleteBookmark(bookmarkId)
+        }
+    }
 
     fun addTrackToQuickPlaylist() {
         val m = uiState.value.media
         if (!m.hasActiveMedia) return
         viewModelScope.launch {
+            val localId = m.localTrackId
+            if (localId != null) {
+                val existing = playlistsFlow.value.firstOrNull()
+                val pid = existing?.id ?: libraryRepo.createPlaylist("Favoritas rápidas")
+                libraryRepo.addTrackToPlaylist(pid, localId)
+            }
             val added = prefsRepo.addTrackToQuickPlaylist(m.trackKey)
-            _feedbackMessage.value = if (added) {
-                "Pista guardada en tu lista rápida"
+            _feedbackMessage.value = if (added || localId != null) {
+                "Pista guardada en tu lista"
             } else {
                 "La pista ya estaba en tu lista rápida"
             }
         }
+    }
+
+    // Official Music Accounts (Spotify / Apple Music / YouTube)
+    fun buildSpotifyAuthIntent(): Intent? = accountsCoordinator.buildSpotifyAuthIntent()
+
+    fun handleSpotifyAuthResult(data: Intent?) {
+        viewModelScope.launch {
+            accountsCoordinator.handleSpotifyAuthResult(data)
+        }
+    }
+
+    fun connectYouTubeWithGoogle(activityContext: Context) {
+        viewModelScope.launch {
+            accountsCoordinator.connectYouTubeWithGoogle(activityContext)
+        }
+    }
+
+    fun syncAccountSource(sourceId: MusicSourceId) {
+        viewModelScope.launch {
+            accountsCoordinator.syncSource(sourceId)
+        }
+    }
+
+    fun disconnectAccountSource(sourceId: MusicSourceId) {
+        viewModelScope.launch {
+            accountsCoordinator.disconnectSource(sourceId)
+        }
+    }
+
+    fun searchSpotifyTracks(query: String) {
+        viewModelScope.launch {
+            _spotifySearchResults.value = accountsCoordinator.spotify.search(query)
+        }
+    }
+
+    fun launchAccountExternalUri(sourceId: MusicSourceId, uri: String?) {
+        val ctx = getApplication<Application>()
+        val ok = when (sourceId) {
+            MusicSourceId.SPOTIFY -> accountsCoordinator.spotify.launchExternalUri(ctx, uri)
+            MusicSourceId.APPLE_MUSIC -> accountsCoordinator.appleMusic.launchExternalUri(ctx, uri)
+            MusicSourceId.YOUTUBE_MUSIC -> accountsCoordinator.youtube.launchExternalUri(ctx, uri)
+            else -> false
+        }
+        if (!ok) {
+            _feedbackMessage.value = "No se encontró aplicación compatible para abrir este enlace"
+        }
+    }
+
+    // Artwork debug actions
+    fun clearArtworkCache() {
+        MediaRepository.clearArtworkCaches(getApplication())
+        _feedbackMessage.value = "Caché de carátulas vaciada"
     }
 
     // Sleep timer
@@ -370,7 +912,7 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
         _feedbackMessage.value = "Temporizador desactivado"
     }
 
-    // Audio outputs & Equalizer
+    // Audio outputs & Equalizer / Hi-Res DSP
     fun refreshAudioOutputs() = MediaRepository.refreshAudioOutputs()
 
     fun selectAudioOutput(device: AudioOutputDevice) {
@@ -393,6 +935,7 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             prefsRepo.updateEqualizerConfig {
                 it.copy(
                     presetIndex = presetIndex,
+                    customPresetName = "",
                     bandGainsDb = preset.gains,
                 )
             }
@@ -421,6 +964,96 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
     fun setHiResBufferHigh(high: Boolean) {
         viewModelScope.launch {
             prefsRepo.updateEqualizerConfig { it.copy(hiResBufferHigh = high) }
+        }
+    }
+
+    fun setBassBoostStrength(strength: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(bassBoostStrength = strength.coerceIn(0, 1000)) }
+        }
+    }
+
+    fun setVirtualizerStrength(strength: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(virtualizerStrength = strength.coerceIn(0, 1000)) }
+        }
+    }
+
+    fun setLoudnessGainMb(gainMb: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(loudnessGainMb = gainMb.coerceIn(0, 1000)) }
+        }
+    }
+
+    fun setPreampGainDb(preampDb: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(preampGainDb = preampDb.coerceIn(-6f, 6f)) }
+        }
+    }
+
+    fun setStereoBalance(balance: Float) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(stereoBalance = balance.coerceIn(-1f, 1f)) }
+        }
+    }
+
+    fun setGaplessEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(gaplessEnabled = enabled) }
+        }
+    }
+
+    fun setReplayGainEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(replayGainEnabled = enabled) }
+        }
+    }
+
+    fun setFloat24BitOutput(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(float24BitOutput = enabled) }
+        }
+    }
+
+    fun setCrossfadeSeconds(seconds: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { it.copy(crossfadeSeconds = seconds.coerceIn(0, 12)) }
+        }
+    }
+
+    fun switchEqOutputCategory(category: AudioOutputCategory) {
+        viewModelScope.launch {
+            prefsRepo.switchEqualizerOutputCategory(category)
+            _feedbackMessage.value = "Perfil DSP: ${category.label}"
+        }
+    }
+
+    fun saveCustomEqPreset(name: String) {
+        viewModelScope.launch {
+            prefsRepo.saveCustomEqPreset(name, uiState.value.equalizerConfig)
+            _feedbackMessage.value = "Preset '$name' guardado"
+        }
+    }
+
+    fun deleteCustomEqPreset(presetId: String) {
+        viewModelScope.launch {
+            prefsRepo.deleteCustomEqPreset(presetId)
+        }
+    }
+
+    fun applyCustomEqPreset(preset: CustomEqPreset) {
+        viewModelScope.launch {
+            prefsRepo.updateEqualizerConfig { cur ->
+                cur.copy(
+                    presetIndex = -1,
+                    customPresetName = preset.name,
+                    bandGainsDb = preset.bandGainsDb,
+                    bassBoostStrength = preset.bassBoostStrength,
+                    virtualizerStrength = preset.virtualizerStrength,
+                    loudnessGainMb = preset.loudnessGainMb,
+                    preampGainDb = preset.preampGainDb,
+                )
+            }
         }
     }
 
@@ -602,10 +1235,6 @@ class MagicMusicViewModel(application: Application) : AndroidViewModel(applicati
             is CompatActionResult.FallbackManualGuide -> _feedbackMessage.value = result.message
             is CompatActionResult.Error -> _feedbackMessage.value = result.message
         }
-    }
-
-    fun pinWidget(isCapsule: Boolean) {
-        pinWidget(if (isCapsule) WidgetFormat.CAPSULE_4X1 else WidgetFormat.CARD_4X2)
     }
 
     // Lock screen & Quick Settings mutations

@@ -38,7 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -65,21 +67,21 @@ import com.example.ui.components.MagicNavRail
 import com.example.ui.navigation.MagicNavTab
 import com.example.ui.navigation.MagicRoute
 import com.example.ui.screens.AppearanceScreen
-import com.example.ui.screens.AudioQualityScreen
 import com.example.ui.screens.ControlsScreen
 import com.example.ui.screens.DesignShowcaseHostScreen
-import com.example.ui.screens.HomeDeckScreen
+import com.example.ui.screens.EqualizerScreen
+import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.LocalStatsScreen
 import com.example.ui.screens.LyricsScreen
 import com.example.ui.screens.NowPlayingScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PlaylistsScreen
 import com.example.ui.screens.QueueScreen
 import com.example.ui.screens.ServicesScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.ShowcaseDestination
 import com.example.ui.screens.SystemHealthScreen
 import com.example.ui.screens.WidgetStudioScreen
-import com.example.ui.screens.LibraryScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,12 +113,33 @@ fun MagicMusicApp(
     themePreferences: ThemePreferences = ThemePreferences(),
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val artworkColors by viewModel.artworkColors.collectAsStateWithLifecycle()
+    val playbackProgress by viewModel.playbackProgressFlow.collectAsStateWithLifecycle()
+    val albums by viewModel.albumsFlow.collectAsStateWithLifecycle()
+    val artists by viewModel.artistsFlow.collectAsStateWithLifecycle()
+    val folders by viewModel.foldersFlow.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlistsFlow.collectAsStateWithLifecycle()
+    val mostPlayed by viewModel.mostPlayedFlow.collectAsStateWithLifecycle()
+    val recentlyAdded by viewModel.recentlyAddedFlow.collectAsStateWithLifecycle()
+    val favorites by viewModel.favoritesFlow.collectAsStateWithLifecycle()
+    val recentlyPlayedLocal by viewModel.recentlyPlayedLocalFlow.collectAsStateWithLifecycle()
+    val bookmarks by viewModel.currentTrackBookmarksFlow.collectAsStateWithLifecycle()
+    val savedProfiles by viewModel.savedColorProfilesFlow.collectAsStateWithLifecycle()
+    val widgetInstances by viewModel.widgetInstancesFlow.collectAsStateWithLifecycle()
+    val customEqPresets by viewModel.customEqPresetsFlow.collectAsStateWithLifecycle()
+    val spotifySnapshot by viewModel.spotifyAccountState.collectAsStateWithLifecycle()
+    val appleMusicSnapshot by viewModel.appleMusicAccountState.collectAsStateWithLifecycle()
+    val youtubeSnapshot by viewModel.youtubeAccountState.collectAsStateWithLifecycle()
+    val spotifySearchResults by viewModel.spotifySearchResults.collectAsStateWithLifecycle()
+    val localArtworkDiagnostics by viewModel.localArtworkDiagnostics.collectAsStateWithLifecycle()
+    val sessionArtworkDebug by viewModel.sessionArtworkDebug.collectAsStateWithLifecycle()
+
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route ?: MagicRoute.Home.pattern
-    val selectedTabId = MagicNavTab.fromRoute(currentRoute)?.routePattern ?: MagicNavTab.HOME.routePattern
+    val currentRoute = backStackEntry?.destination?.route ?: MagicRoute.Library.pattern
+    val selectedTabId = MagicNavTab.fromRoute(currentRoute)?.routePattern ?: MagicNavTab.LIBRARY.routePattern
     val showMainChrome = MagicRoute.isTopLevel(currentRoute)
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -173,8 +196,11 @@ fun MagicMusicApp(
         MagicNavTab.entries.map { it.toNavItemUiModel() }
     }
 
-    val navigateToTab: (MagicNavTab) -> Unit = remember(navController) {
+    val navigateToTab: (MagicNavTab) -> Unit = remember(navController, themePreferences.hapticFeedbackEnabled) {
         { tab ->
+            if (themePreferences.hapticFeedbackEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
             navController.navigate(tab.baseRoute()) {
                 popUpTo(navController.graph.findStartDestination().id) {
                     saveState = true
@@ -188,7 +214,7 @@ fun MagicMusicApp(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(tokens.backgroundBrush),
+            .background(tokens.backgroundColor),
     ) {
         val useRail = maxWidth >= 720.dp
 
@@ -201,6 +227,8 @@ fun MagicMusicApp(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         MagicMiniPlayer(
                             media = state.media,
+                            positionMs = playbackProgress.first,
+                            durationMs = playbackProgress.second,
                             onPlayPause = viewModel::playPause,
                             onNext = viewModel::next,
                             onClick = { navController.navigate(MagicRoute.NowPlaying.pattern) },
@@ -241,11 +269,13 @@ fun MagicMusicApp(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .let { m -> if (showMainChrome) m.widthIn(max = 680.dp).statusBarsPadding() else m },
+                            .let { m -> if (showMainChrome) m.widthIn(max = 720.dp).statusBarsPadding() else m },
                     ) {
                         if (useRail && showMainChrome) {
                             MagicMiniPlayer(
                                 media = state.media,
+                                positionMs = playbackProgress.first,
+                                durationMs = playbackProgress.second,
                                 onPlayPause = viewModel::playPause,
                                 onNext = viewModel::next,
                                 onClick = { navController.navigate(MagicRoute.NowPlaying.pattern) },
@@ -255,7 +285,7 @@ fun MagicMusicApp(
 
                         NavHost(
                             navController = navController,
-                            startDestination = MagicRoute.Home.pattern,
+                            startDestination = MagicRoute.Library.pattern,
                             enterTransition = { fadeIn(animationSpec = tween(animDuration)) },
                             exitTransition = { fadeOut(animationSpec = tween(animDuration)) },
                             popEnterTransition = { fadeIn(animationSpec = tween(animDuration)) },
@@ -264,17 +294,29 @@ fun MagicMusicApp(
                                 .weight(1f)
                                 .fillMaxWidth(),
                         ) {
-                            composable(MagicRoute.Home.pattern) {
-                                HomeDeckScreen(
+                            composable(MagicRoute.Library.pattern) {
+                                LibraryScreen(
                                     state = state,
+                                    pagedTracksFlow = viewModel.pagedLibraryTracks,
+                                    albums = albums,
+                                    artists = artists,
+                                    folders = folders,
+                                    playlists = playlists,
+                                    gridColumns = themePreferences.libraryGridColumns,
                                     onSearchQueryChange = viewModel::setSearchQuery,
+                                    onSortOptionChange = viewModel::setLibrarySortOption,
+                                    onSourceFilterChange = viewModel::setLibrarySourceFilter,
+                                    onGridColumnsChange = viewModel::setLibraryGridColumns,
+                                    onScanLocalLibrary = viewModel::scanLocalLibraryNow,
+                                    onShuffleAllLocal = viewModel::shuffleAllLocalTracks,
+                                    onPlayLocalTracks = viewModel::playLocalTracks,
+                                    onToggleTrackFavorite = viewModel::toggleLocalTrackFavorite,
+                                    onAddTrackToPlaylist = viewModel::addLocalTrackToPlaylist,
+                                    onCreatePlaylist = viewModel::createPlaylist,
+                                    onShareTrack = viewModel::shareLocalTrack,
                                     onSelectSession = viewModel::selectSession,
                                     onOpenSessionMenu = { session -> sessionForContextMenu = session },
                                     onToggleLocalEngine = viewModel::toggleLocalAudioEngine,
-                                    onOpenNowPlaying = { navController.navigate(MagicRoute.NowPlaying.pattern) },
-                                    onOpenSystemHealth = { navController.navigate(MagicRoute.SystemHealth.pattern) },
-                                    onOpenServices = { navController.navigate(MagicRoute.Services.pattern) },
-                                    onOpenActiveApp = viewModel::launchMusicService,
                                     onPlayRecentTrack = { entry ->
                                         if (entry.service == MusicServiceApp.LOCAL_ENGINE) {
                                             viewModel.toggleLocalAudioEngine()
@@ -282,18 +324,139 @@ fun MagicMusicApp(
                                             viewModel.launchMusicService(entry.packageName)
                                         }
                                     },
+                                    onOpenEqualizer = { navigateToTab(MagicNavTab.EQUALIZER) },
+                                    onOpenSystemHealth = { navController.navigate(MagicRoute.SystemHealth.pattern) },
+                                    onOpenServices = { navController.navigate(MagicRoute.Services.pattern) },
+                                    onOpenNowPlaying = { navController.navigate(MagicRoute.NowPlaying.pattern) },
+                                    onOpenActiveApp = viewModel::launchMusicService,
+                                    onShowFeedback = viewModel::showFeedback,
+                                    pagedTracksForAlbum = viewModel::pagedTracksForAlbum,
+                                    pagedTracksForArtist = viewModel::pagedTracksForArtist,
+                                    pagedTracksForFolder = viewModel::pagedTracksForFolder,
                                 )
                             }
 
-                            composable(MagicRoute.Library.pattern) {
-                                LibraryScreen(
+                            composable(MagicRoute.Playlists.pattern) {
+                                PlaylistsScreen(
+                                    playlists = playlists,
+                                    mostPlayed = mostPlayed,
+                                    recentlyAdded = recentlyAdded,
+                                    favorites = favorites,
+                                    recentlyPlayed = recentlyPlayedLocal,
+                                    spotifySnapshot = spotifySnapshot,
+                                    youtubeSnapshot = youtubeSnapshot,
+                                    observePlaylistTracks = viewModel::observePlaylistTracks,
+                                    onPlaySmartPlaylist = viewModel::playSmartPlaylist,
+                                    onPlayPlaylist = viewModel::playPlaylist,
+                                    onPlayLocalTracks = viewModel::playLocalTracks,
+                                    onCreatePlaylist = viewModel::createPlaylist,
+                                    onRenamePlaylist = viewModel::renamePlaylist,
+                                    onDeletePlaylist = viewModel::deletePlaylist,
+                                    onRemoveTrackFromPlaylist = viewModel::removeLocalTrackFromPlaylist,
+                                    onReorderPlaylistTracks = viewModel::reorderPlaylistTracks,
+                                    onScanLocalLibrary = viewModel::scanLocalLibraryNow,
+                                    onLaunchAccountUri = viewModel::launchAccountExternalUri,
+                                    onOpenServices = { navController.navigate(MagicRoute.Services.pattern) },
+                                )
+                            }
+
+                            composable(MagicRoute.Equalizer.pattern) {
+                                val dspReport = remember(state.media.isPlaying, state.equalizerConfig.enabled) {
+                                    viewModel.currentDspCapabilityReport()
+                                }
+                                EqualizerScreen(
                                     state = state,
-                                    onSearchQueryChange = viewModel::setSearchQuery,
+                                    customPresets = customEqPresets,
+                                    dspReport = dspReport,
+                                    onToggleEqEnabled = viewModel::setEqualizerEnabled,
+                                    onSelectOutputCategory = viewModel::switchEqOutputCategory,
+                                    onBandChange = viewModel::setEqualizerBand,
+                                    onSelectPreset = viewModel::setEqualizerPreset,
+                                    onModeChange = viewModel::setEqualizerAdvanced,
+                                    onSaveCustomPreset = viewModel::saveCustomEqPreset,
+                                    onApplyCustomPreset = viewModel::applyCustomEqPreset,
+                                    onDeleteCustomPreset = viewModel::deleteCustomEqPreset,
+                                    onBassBoostChange = viewModel::setBassBoostStrength,
+                                    onVirtualizerChange = viewModel::setVirtualizerStrength,
+                                    onLoudnessChange = viewModel::setLoudnessGainMb,
+                                    onPreampChange = viewModel::setPreampGainDb,
+                                    onStereoBalanceChange = viewModel::setStereoBalance,
+                                    onGaplessChange = viewModel::setGaplessEnabled,
+                                    onReplayGainChange = viewModel::setReplayGainEnabled,
+                                    onFloat24BitChange = viewModel::setFloat24BitOutput,
+                                    onHiResBufferChange = viewModel::setHiResBufferHigh,
+                                    onCrossfadeChange = viewModel::setCrossfadeSeconds,
+                                    onRefreshOutputs = viewModel::refreshAudioOutputs,
+                                    onSelectOutput = viewModel::selectAudioOutput,
+                                )
+                            }
+
+                            composable(MagicRoute.Style.pattern) {
+                                AppearanceScreen(
+                                    themePreferences = themePreferences,
+                                    savedProfiles = savedProfiles,
+                                    widgetInstances = widgetInstances,
+                                    onSelectThemeMode = viewModel::setThemeMode,
+                                    onSelectSurfaceTone = viewModel::setSurfaceToneStyle,
+                                    onSelectSeedSwatch = { swatch -> viewModel.setSeedColor(swatch.argb) },
+                                    onSelectCustomSeedArgb = viewModel::setSeedColor,
+                                    onSelectSchemeVariant = viewModel::setSchemeVariant,
+                                    onSelectContrastPreset = viewModel::setContrastPreset,
+                                    onUpdateRoleOverrides = viewModel::setRoleOverrides,
+                                    onResetRoleOverrides = viewModel::resetRoleOverrides,
+                                    onToggleDynamicColor = viewModel::setUseDynamicColor,
+                                    onTogglePureAmoled = viewModel::setPureAmoledBlack,
+                                    onToggleColorFromArtwork = viewModel::setColorFromArtwork,
+                                    onToggleReduceAnimations = viewModel::setReduceAnimations,
+                                    onToggleExpressiveM3 = viewModel::setUseExpressiveM3,
+                                    onToggleHaptics = viewModel::setHapticFeedback,
+                                    onSelectGeometryPreset = viewModel::setGeometryPreset,
+                                    onSelectArtworkShape = viewModel::setArtworkShape,
+                                    onSelectNavLabelVisibility = viewModel::setNavLabelVisibility,
+                                    onSelectMiniPlayerStyle = viewModel::setMiniPlayerStyle,
+                                    onSelectLibraryGridColumns = viewModel::setLibraryGridColumns,
+                                    onToggleLyricsAutoScroll = viewModel::setLyricsAutoScroll,
+                                    onLyricsFontScaleChange = viewModel::setLyricsFontScale,
+                                    onSaveColorProfile = viewModel::saveColorProfile,
+                                    onApplyColorProfile = viewModel::applyColorProfile,
+                                    onDeleteColorProfile = viewModel::deleteColorProfile,
+                                    onExportProfilesJson = viewModel::exportColorProfilesJson,
+                                    onImportProfilesJson = viewModel::importColorProfilesJson,
+                                    onResetWidgetToApp = viewModel::resetWidgetInstanceToApp,
+                                    onOpenWidgetStudio = { navController.navigate(MagicRoute.WidgetStudio.pattern) },
+                                    onShowFeedback = viewModel::showFeedback,
+                                    onBack = null,
+                                )
+                            }
+
+                            composable(MagicRoute.Settings.pattern) {
+                                SettingsScreen(
+                                    state = state,
+                                    onOpenAppearance = { navigateToTab(MagicNavTab.STYLE) },
+                                    onOpenServices = { navController.navigate(MagicRoute.Services.pattern) },
+                                    onOpenAudioQuality = { navigateToTab(MagicNavTab.EQUALIZER) },
+                                    onOpenControls = { navController.navigate(MagicRoute.Controls.create(0)) },
+                                    onOpenWidgetStudio = { navController.navigate(MagicRoute.WidgetStudio.pattern) },
+                                    onOpenStats = { navController.navigate(MagicRoute.Stats.pattern) },
+                                    onOpenSystemHealth = { navController.navigate(MagicRoute.SystemHealth.pattern) },
+                                    onOpenOnboarding = { navController.navigate(MagicRoute.Onboarding.pattern) },
+                                    onOpenDeveloperShowcase = {
+                                        navController.navigate(MagicRoute.Developer.create(ShowcaseDestination.GALLERY.name))
+                                    },
+                                    onOpenArtworkInspector = {
+                                        navController.navigate(MagicRoute.Developer.create(ShowcaseDestination.ARTWORK_INSPECTOR.name))
+                                    },
+                                    onToggleBridge = viewModel::toggleBridgeService,
+                                    onToggleLockVisibility = viewModel::toggleShowOnLockScreen,
+                                    onToggleLockArtwork = viewModel::toggleShowArtworkOnLockScreen,
+                                    onToggleRequireUnlockToOpenApp = viewModel::toggleRequireUnlockToOpenApp,
+                                    onExportBackupJson = viewModel::exportFullBackupJson,
+                                    onImportBackupJson = viewModel::importFullBackupJson,
                                     onShowFeedback = viewModel::showFeedback,
                                 )
                             }
 
-                            composable(MagicRoute.Widgets.pattern) {
+                            composable(MagicRoute.WidgetStudio.pattern) {
                                 WidgetStudioScreen(
                                     state = state,
                                     artworkColors = artworkColors,
@@ -337,50 +500,30 @@ fun MagicMusicApp(
                                 ),
                             ) { entry ->
                                 val initialTab = entry.arguments?.getInt("tab") ?: 0
-                                ControlsScreen(
-                                    state = state,
-                                    initialTab = initialTab,
-                                    onToggleBridge = viewModel::toggleBridgeService,
-                                    onToggleLockVisibility = viewModel::toggleShowOnLockScreen,
-                                    onToggleLockArtwork = viewModel::toggleShowArtworkOnLockScreen,
-                                    onSelectLockPrivacyLevel = viewModel::setLockPrivacyLevel,
-                                    onSelectLockAutoCloseSeconds = viewModel::setLockAutoCloseSeconds,
-                                    onToggleCompactActionIndex = viewModel::toggleCompactActionIndex,
-                                    onDismissNotifyChannelGuide = viewModel::dismissNotifyChannelGuide,
-                                    onToggleRequireUnlockToOpenApp = viewModel::toggleRequireUnlockToOpenApp,
-                                    onToggleRequireUnlockToSwitchSource = viewModel::toggleRequireUnlockToSwitchSource,
-                                    onToggleRequireUnlockForCustomActions = viewModel::toggleRequireUnlockForCustomActions,
-                                    onSelectLockAction1 = viewModel::setLockAction1,
-                                    onSelectLockAction2 = viewModel::setLockAction2,
-                                    onSelectQsTileMode = viewModel::setQsTileMode,
-                                    onRequestAddQuickTile = viewModel::requestAddQuickTile,
-                                    onOpenLockDeck = viewModel::openLockScreenDeck,
-                                    onPlayPause = viewModel::playPause,
-                                    onNext = viewModel::next,
-                                    onPrevious = viewModel::previous,
-                                )
-                            }
-
-                            composable(MagicRoute.Settings.pattern) {
-                                SettingsScreen(
-                                    state = state,
-                                    onOpenAppearance = { navController.navigate(MagicRoute.Appearance.pattern) },
-                                    onOpenServices = { navController.navigate(MagicRoute.Services.pattern) },
-                                    onOpenAudioQuality = { navController.navigate(MagicRoute.AudioQuality.pattern) },
-                                    onOpenStats = { navController.navigate(MagicRoute.Stats.pattern) },
-                                    onOpenSystemHealth = { navController.navigate(MagicRoute.SystemHealth.pattern) },
-                                    onOpenOnboarding = { navController.navigate(MagicRoute.Onboarding.pattern) },
-                                    onOpenDeveloperShowcase = {
-                                        navController.navigate(MagicRoute.Developer.create(ShowcaseDestination.GALLERY.name))
-                                    },
-                                    onToggleBridge = viewModel::toggleBridgeService,
-                                    onToggleLockVisibility = viewModel::toggleShowOnLockScreen,
-                                    onToggleLockArtwork = viewModel::toggleShowArtworkOnLockScreen,
-                                    onToggleRequireUnlockToOpenApp = viewModel::toggleRequireUnlockToOpenApp,
-                                    onExportBackupJson = viewModel::exportFullBackupJson,
-                                    onImportBackupJson = viewModel::importFullBackupJson,
-                                    onShowFeedback = viewModel::showFeedback,
-                                )
+                                Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                                    ControlsScreen(
+                                        state = state,
+                                        initialTab = initialTab,
+                                        onToggleBridge = viewModel::toggleBridgeService,
+                                        onToggleLockVisibility = viewModel::toggleShowOnLockScreen,
+                                        onToggleLockArtwork = viewModel::toggleShowArtworkOnLockScreen,
+                                        onSelectLockPrivacyLevel = viewModel::setLockPrivacyLevel,
+                                        onSelectLockAutoCloseSeconds = viewModel::setLockAutoCloseSeconds,
+                                        onToggleCompactActionIndex = viewModel::toggleCompactActionIndex,
+                                        onDismissNotifyChannelGuide = viewModel::dismissNotifyChannelGuide,
+                                        onToggleRequireUnlockToOpenApp = viewModel::toggleRequireUnlockToOpenApp,
+                                        onToggleRequireUnlockToSwitchSource = viewModel::toggleRequireUnlockToSwitchSource,
+                                        onToggleRequireUnlockForCustomActions = viewModel::toggleRequireUnlockForCustomActions,
+                                        onSelectLockAction1 = viewModel::setLockAction1,
+                                        onSelectLockAction2 = viewModel::setLockAction2,
+                                        onSelectQsTileMode = viewModel::setQsTileMode,
+                                        onRequestAddQuickTile = viewModel::requestAddQuickTile,
+                                        onOpenLockDeck = viewModel::openLockScreenDeck,
+                                        onPlayPause = viewModel::playPause,
+                                        onNext = viewModel::next,
+                                        onPrevious = viewModel::previous,
+                                    )
+                                }
                             }
 
                             composable(
@@ -401,6 +544,9 @@ fun MagicMusicApp(
                                 NowPlayingScreen(
                                     state = state,
                                     artworkColors = artworkColors,
+                                    positionMs = playbackProgress.first,
+                                    durationMs = playbackProgress.second,
+                                    bookmarks = bookmarks,
                                     onBack = { navController.popBackStack() },
                                     onPlayPause = viewModel::playPause,
                                     onNext = viewModel::next,
@@ -412,6 +558,11 @@ fun MagicMusicApp(
                                     onToggleRepeat = viewModel::toggleRepeat,
                                     onOpenLyrics = { navController.navigate(MagicRoute.Lyrics.pattern) },
                                     onOpenQueue = { navController.navigate(MagicRoute.Queue.pattern) },
+                                    onSkipToQueueItem = viewModel::skipToQueueItem,
+                                    onReorderLocalQueue = viewModel::reorderLocalQueue,
+                                    onClearLocalQueue = viewModel::clearLocalQueue,
+                                    onAddBookmark = viewModel::addTrackBookmark,
+                                    onDeleteBookmark = viewModel::deleteTrackBookmark,
                                     onStartSleepTimerCountdown = viewModel::startSleepTimerCountdown,
                                     onStartSleepTimerEndOfTrack = viewModel::startSleepTimerEndOfTrack,
                                     onToggleSleepFade = viewModel::setSleepTimerFadeOut,
@@ -422,7 +573,7 @@ fun MagicMusicApp(
                                     onAddToQuickPlaylist = viewModel::addTrackToQuickPlaylist,
                                     onViewArtist = { artist ->
                                         viewModel.setSearchQuery(artist)
-                                        navigateToTab(MagicNavTab.HOME)
+                                        navigateToTab(MagicNavTab.LIBRARY)
                                     },
                                     onOpenSourceApp = viewModel::launchMusicService,
                                 )
@@ -432,6 +583,7 @@ fun MagicMusicApp(
                                 LyricsScreen(
                                     state = state,
                                     artworkColors = artworkColors,
+                                    positionMs = playbackProgress.first,
                                     onBack = { navController.popBackStack() },
                                     onPlayPause = viewModel::playPause,
                                     onStartLocalEngine = viewModel::toggleLocalAudioEngine,
@@ -441,6 +593,8 @@ fun MagicMusicApp(
                             composable(MagicRoute.Queue.pattern) {
                                 QueueScreen(
                                     state = state,
+                                    positionMs = playbackProgress.first,
+                                    durationMs = playbackProgress.second,
                                     onBack = { navController.popBackStack() },
                                     onPlayPause = viewModel::playPause,
                                     onNext = viewModel::next,
@@ -454,6 +608,17 @@ fun MagicMusicApp(
                             composable(MagicRoute.Services.pattern) {
                                 ServicesScreen(
                                     state = state,
+                                    spotifySnapshot = spotifySnapshot,
+                                    appleMusicSnapshot = appleMusicSnapshot,
+                                    youtubeSnapshot = youtubeSnapshot,
+                                    spotifySearchResults = spotifySearchResults,
+                                    onBuildSpotifyAuthIntent = viewModel::buildSpotifyAuthIntent,
+                                    onHandleSpotifyAuthResult = viewModel::handleSpotifyAuthResult,
+                                    onConnectYouTubeWithGoogle = viewModel::connectYouTubeWithGoogle,
+                                    onSyncAccountSource = viewModel::syncAccountSource,
+                                    onDisconnectAccountSource = viewModel::disconnectAccountSource,
+                                    onSearchSpotifyTracks = viewModel::searchSpotifyTracks,
+                                    onLaunchAccountExternalUri = viewModel::launchAccountExternalUri,
                                     onLaunchService = viewModel::launchMusicService,
                                     onRefreshServices = viewModel::refreshSystemState,
                                     onGrantListenerPermission = viewModel::openNotificationListenerSettings,
@@ -462,55 +627,32 @@ fun MagicMusicApp(
                                     onToggleManagedPackage = viewModel::toggleManagedPackageEnabled,
                                     onSetPreferredPackage = viewModel::setPreferredServicePackage,
                                     onOpenBatterySettings = viewModel::openBatteryOptimizationSettings,
-                                    onBack = { navController.popBackStack() },
-                                )
-                            }
-
-                            composable(MagicRoute.Appearance.pattern) {
-                                AppearanceScreen(
-                                    themePreferences = themePreferences,
-                                    onSelectThemeMode = viewModel::setThemeMode,
-                                    onSelectSurfaceTone = viewModel::setSurfaceToneStyle,
-                                    onSelectSeedSwatch = { swatch -> viewModel.setSeedColor(swatch.argb) },
-                                    onToggleDynamicColor = viewModel::setUseDynamicColor,
-                                    onTogglePureAmoled = viewModel::setPureAmoledBlack,
-                                    onToggleColorFromArtwork = viewModel::setColorFromArtwork,
-                                    onToggleReduceAnimations = viewModel::setReduceAnimations,
+                                    onShowFeedback = viewModel::showFeedback,
                                     onBack = { navController.popBackStack() },
                                 )
                             }
 
                             composable(MagicRoute.SystemHealth.pattern) {
-                                SystemHealthScreen(
-                                    state = state,
-                                    onBack = { navController.popBackStack() },
-                                    onFixItem = { id ->
-                                        viewModel.fixHealthCheck(id, requestPostNotificationsAction)
-                                    },
-                                )
-                            }
-
-                            composable(MagicRoute.AudioQuality.pattern) {
-                                AudioQualityScreen(
-                                    state = state,
-                                    onBack = { navController.popBackStack() },
-                                    onToggleEqEnabled = viewModel::setEqualizerEnabled,
-                                    onBandChange = viewModel::setEqualizerBand,
-                                    onSelectPreset = viewModel::setEqualizerPreset,
-                                    onModeChange = viewModel::setEqualizerAdvanced,
-                                    onToggleHiResBuffer = viewModel::setHiResBufferHigh,
-                                    onRefreshOutputs = viewModel::refreshAudioOutputs,
-                                    onSelectOutput = viewModel::selectAudioOutput,
-                                )
+                                Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                                    SystemHealthScreen(
+                                        state = state,
+                                        onBack = { navController.popBackStack() },
+                                        onFixItem = { id ->
+                                            viewModel.fixHealthCheck(id, requestPostNotificationsAction)
+                                        },
+                                    )
+                                }
                             }
 
                             composable(MagicRoute.Stats.pattern) {
-                                LocalStatsScreen(
-                                    state = state,
-                                    onBack = { navController.popBackStack() },
-                                    onClearHistory = viewModel::clearLocalStats,
-                                    onOpenActiveApp = viewModel::launchMusicService,
-                                )
+                                Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+                                    LocalStatsScreen(
+                                        state = state,
+                                        onBack = { navController.popBackStack() },
+                                        onClearHistory = viewModel::clearLocalStats,
+                                        onOpenActiveApp = viewModel::launchMusicService,
+                                    )
+                                }
                             }
 
                             composable(MagicRoute.Onboarding.pattern) {
@@ -554,6 +696,9 @@ fun MagicMusicApp(
                                             appThemePreferences = themePreferences,
                                             media = state.media,
                                             artworkColors = artworkColors,
+                                            localArtworkDiagnostics = localArtworkDiagnostics,
+                                            sessionArtworkDebug = sessionArtworkDebug,
+                                            onClearArtworkCache = viewModel::clearArtworkCache,
                                             onPlayPause = viewModel::playPause,
                                             onNext = viewModel::next,
                                             onPrevious = viewModel::previous,

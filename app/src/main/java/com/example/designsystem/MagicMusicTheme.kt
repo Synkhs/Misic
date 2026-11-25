@@ -4,7 +4,6 @@ import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
@@ -15,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.example.designsystem.expressive.MagicExpressiveRootTheme
+import com.example.designsystem.expressive.buildShapesForPreset
 
 object MagicTheme {
     val tokens: MagicThemeTokens
@@ -41,6 +42,9 @@ fun MagicMusicTheme(
         isDark,
         themePreferences.surfaceToneStyle,
         themePreferences.pureAmoledBlack,
+        themePreferences.schemeVariant,
+        themePreferences.contrastLevel,
+        themePreferences.roleOverrides,
         dynamicSupported,
         context,
     ) {
@@ -53,13 +57,20 @@ fun MagicMusicTheme(
                     } else {
                         dyn
                     }
-                    if (isDark && themePreferences.pureAmoledBlack) applyAmoledBlack(adjusted) else adjusted
+                    val contrasted = MaterialColorUtilitiesEngine.enforceSchemeContrastAA(
+                        adjusted,
+                        themePreferences.contrastLevel.minAaTextRatio,
+                    )
+                    if (isDark && themePreferences.pureAmoledBlack) applyAmoledBlack(contrasted) else contrasted
                 } else {
                     generateTonalColorScheme(
                         seedColorArgb = themePreferences.seedColorArgb,
                         isDark = isDark,
                         surfaceToneStyle = themePreferences.surfaceToneStyle,
                         pureAmoled = themePreferences.pureAmoledBlack,
+                        schemeVariant = themePreferences.schemeVariant,
+                        contrastPreset = themePreferences.contrastLevel,
+                        roleOverrides = themePreferences.roleOverrides,
                     )
                 }
             }
@@ -69,6 +80,9 @@ fun MagicMusicTheme(
                     isDark = isDark,
                     surfaceToneStyle = themePreferences.surfaceToneStyle,
                     pureAmoled = themePreferences.pureAmoledBlack,
+                    schemeVariant = themePreferences.schemeVariant,
+                    contrastPreset = themePreferences.contrastLevel,
+                    roleOverrides = themePreferences.roleOverrides,
                 )
             }
         }
@@ -78,18 +92,25 @@ fun MagicMusicTheme(
         appTheme,
         resolvedColorScheme,
         isDark,
-        themePreferences.pureAmoledBlack,
-        themePreferences.colorFromArtwork,
-        themePreferences.reduceAnimations,
+        themePreferences,
         dynamicSupported,
     ) {
-        val radii = MagicRadii()
+        val radii = radiiForPreset(themePreferences.geometryPreset)
         MagicThemeTokens(
             theme = appTheme,
             isDark = isDark,
             pureAmoled = isDark && themePreferences.pureAmoledBlack,
             usesDynamicColor = appTheme is AppTheme.Material3Dynamic && dynamicSupported,
             colorFromArtwork = themePreferences.colorFromArtwork,
+            useExpressiveM3 = themePreferences.useExpressiveM3,
+            hapticFeedbackEnabled = themePreferences.hapticFeedbackEnabled,
+            geometryPreset = themePreferences.geometryPreset,
+            artworkShapeStyle = themePreferences.artworkShape,
+            navLabelVisibility = themePreferences.navLabelVisibility,
+            miniPlayerStyle = themePreferences.miniPlayerStyle,
+            libraryGridColumns = themePreferences.libraryGridColumns.coerceIn(1, 3),
+            lyricsAutoScroll = themePreferences.lyricsAutoScroll,
+            lyricsFontScale = themePreferences.lyricsFontScale,
             radii = radii,
             motion = MagicMotion(reduceAnimations = themePreferences.reduceAnimations),
             semantic = buildSemanticColorsForM3(
@@ -97,12 +118,12 @@ fun MagicMusicTheme(
                 isDark = isDark,
                 pureAmoled = themePreferences.pureAmoledBlack,
             ),
-            backgroundBrush = buildBackgroundBrush(
+            backgroundColor = buildFlatBackgroundColor(
                 colorScheme = resolvedColorScheme,
                 isDark = isDark,
                 pureAmoled = themePreferences.pureAmoledBlack,
             ),
-            shapes = buildMagicShapes(radii),
+            shapes = buildShapesForPreset(themePreferences.geometryPreset),
         )
     }
 
@@ -119,10 +140,12 @@ fun MagicMusicTheme(
     }
 
     CompositionLocalProvider(LocalMagicTokens provides tokens) {
-        MaterialTheme(
+        MagicExpressiveRootTheme(
             colorScheme = resolvedColorScheme,
-            typography = MagicTypography,
             shapes = tokens.shapes,
+            typography = MagicTypography,
+            useExpressiveM3 = themePreferences.useExpressiveM3,
+            reduceAnimations = themePreferences.reduceAnimations,
             content = content,
         )
     }

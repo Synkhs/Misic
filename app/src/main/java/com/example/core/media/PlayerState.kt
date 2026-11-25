@@ -91,6 +91,8 @@ data class SessionSnapshot(
     val isRepeatEnabled: Boolean = false,
     val queue: List<QueueTrackItem> = emptyList(),
     val lyrics: LyricsData? = null,
+    val streamFormatBadge: String = "Hi-Res Local",
+    val localTrackId: Long? = null,
 ) {
     fun computeInterpolatedPosition(nowElapsedMs: Long = SystemClock.elapsedRealtime()): Long {
         if (!isPlaying || lastPositionUpdateElapsedMs <= 0L) {
@@ -121,9 +123,11 @@ data class PlayerState(
                 service = snap.service,
                 title = snap.title,
                 artist = snap.artist,
+                album = snap.album,
                 isPlaying = snap.isPlaying,
                 isSelected = snap.isSelected,
                 appLabel = snap.appName,
+                isLocalEngine = snap.isLocalEngine,
             )
         }
         return if (active != null) {
@@ -137,6 +141,7 @@ data class PlayerState(
                 positionMs = interpolatedPositionMs.coerceAtLeast(0L),
                 durationMs = active.durationMs,
                 albumArt = active.albumArt,
+                albumArtUri = active.albumArtUri,
                 isLocalEngine = active.isLocalEngine,
                 activeSessions = sessionInfos,
                 lastUpdatedMs = active.lastActiveTimestampMs,
@@ -150,11 +155,14 @@ data class PlayerState(
                 isShuffleEnabled = active.isShuffleEnabled,
                 canRepeat = active.canRepeat,
                 isRepeatEnabled = active.isRepeatEnabled,
+                isMuted = isMuted,
+                streamFormatBadge = active.streamFormatBadge,
                 queue = active.queue,
                 lyrics = active.lyrics,
+                localTrackId = active.localTrackId,
             )
         } else {
-            UnifiedMediaState(activeSessions = sessionInfos)
+            UnifiedMediaState(activeSessions = sessionInfos, isMuted = isMuted)
         }
     }
 }

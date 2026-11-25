@@ -24,8 +24,8 @@ import com.example.designsystem.VioletDarkColorScheme
 import com.example.designsystem.VioletLightColorScheme
 import com.example.designsystem.VioletSeedColor
 import com.example.designsystem.applyAmoledBlack
-import com.example.designsystem.buildArtworkTintedBrush
-import com.example.designsystem.buildBackgroundBrush
+import com.example.designsystem.buildArtworkTonalSurface
+import com.example.designsystem.buildFlatBackgroundColor
 import com.example.designsystem.buildSemanticColorsForM3
 import com.example.designsystem.generateTonalColorScheme
 import org.junit.Assert.assertEquals
@@ -37,7 +37,7 @@ import org.junit.Test
 class Phase2ThemeUnitTest {
 
     @Test
-    fun themePreferences_defaultToDarkTonalVioletWithArtworkTint() {
+    fun themePreferences_defaultToDarkTonalLavenderExpressive() {
         val defaults = ThemePreferences()
         assertFalse(defaults.useDynamicColor)
         assertEquals(ThemeMode.DARK, defaults.themeMode)
@@ -46,6 +46,7 @@ class Phase2ThemeUnitTest {
         assertFalse(defaults.pureAmoledBlack)
         assertTrue(defaults.colorFromArtwork)
         assertFalse(defaults.reduceAnimations)
+        assertTrue(defaults.useExpressiveM3)
         assertEquals(AppTheme.Material3Static(DEFAULT_VIOLET_SEED_ARGB), defaults.toAppTheme())
     }
 
@@ -54,7 +55,7 @@ class Phase2ThemeUnitTest {
         assertEquals(ReferenceBgDark, VioletDarkColorScheme.background)
         assertEquals(ReferenceSurfaceTonalDark, VioletDarkColorScheme.surfaceContainer)
         assertEquals(ReferenceSurfaceHighDark, VioletDarkColorScheme.surfaceContainerHigh)
-        assertEquals(ReferenceSelectedPillDark, VioletDarkColorScheme.secondaryContainer)
+        assertEquals(ReferenceSelectedPillDark, VioletDarkColorScheme.primaryContainer)
         assertEquals(ReferencePrimaryLilac, VioletDarkColorScheme.primary)
         assertEquals(ReferenceOnPrimaryPlum, VioletDarkColorScheme.onPrimary)
         assertEquals(ReferenceTextPrimaryDark, VioletDarkColorScheme.onBackground)
@@ -106,7 +107,7 @@ class Phase2ThemeUnitTest {
     }
 
     @Test
-    fun semanticColorsAndArtworkTintedBrushes_buildCleanly() {
+    fun semanticColorsAndFlatTonalSurfaces_buildWithoutGradients() {
         val lightSemantic = buildSemanticColorsForM3(
             colorScheme = VioletLightColorScheme,
             isDark = false,
@@ -118,21 +119,22 @@ class Phase2ThemeUnitTest {
             pureAmoled = true,
         )
         assertNotEquals(lightSemantic.cardSurface, darkAmoledSemantic.cardSurface)
-        assertEquals(Color(0xFF09080C), darkAmoledSemantic.navBarContainer)
+        assertEquals(Color(0xFF0A0A10), darkAmoledSemantic.navBarContainer)
 
         val artworkColors = ArtworkPaletteExtractor.deriveFromFallbackSeed(VioletSeedColor)
-        val tintedBrush = buildArtworkTintedBrush(
+        val tintedSurface = buildArtworkTonalSurface(
             artworkColors = artworkColors,
             baseBackground = VioletDarkColorScheme.background,
             isDark = true,
         )
-        val bgBrush = buildBackgroundBrush(
+        val flatBg = buildFlatBackgroundColor(
             colorScheme = VioletDarkColorScheme,
             isDark = true,
             pureAmoled = false,
         )
-        assertTrue(tintedBrush.toString().isNotEmpty())
-        assertTrue(bgBrush.toString().isNotEmpty())
+        assertNotEquals(Color.Unspecified, tintedSurface)
+        assertEquals(VioletDarkColorScheme.background, flatBg)
+        assertEquals(Color.Black, buildFlatBackgroundColor(VioletDarkColorScheme, isDark = true, pureAmoled = true))
     }
 
     @Test

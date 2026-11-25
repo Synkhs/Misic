@@ -1,15 +1,18 @@
 package com.example.widget
 
 import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.os.Bundle
 import com.example.core.media.MediaRepository
+import com.example.data.PreferencesRepository
 import com.example.data.WidgetFormat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 abstract class BaseMagicWidgetProvider(
     private val defaultFormat: WidgetFormat,
-) : AppWidgetProvider() {
+) : android.appwidget.AppWidgetProvider() {
 
     override fun onUpdate(
         context: Context,
@@ -52,6 +55,14 @@ abstract class BaseMagicWidgetProvider(
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val appCtx = context.applicationContext
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                PreferencesRepository(appCtx).deleteWidgetInstances(appWidgetIds)
+            } finally {
+                pending.finish()
+            }
+        }
         MediaRepository.evaluateSystemHealth(appCtx)
     }
 }

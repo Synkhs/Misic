@@ -1,6 +1,6 @@
 {
   "name": "MagicMusic",
-  "description": "Widgets reproductores de música estilo Honor MagicOS 10 para Android 16 compatibles con Spotify, YouTube Music, Amazon Music, pantalla de bloqueo y ajustes rápidos.",
+  "description": "Reproductor Hi-Res local, controlador universal MediaSession, ecualizador avanzado, widgets configurables y fuentes oficiales con Material 3 Expressive.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

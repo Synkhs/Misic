@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.media.MediaMetadata
@@ -32,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MagicMediaBridgeService : Service() {
 
@@ -39,6 +41,7 @@ class MagicMediaBridgeService : Service() {
     private lateinit var prefsRepo: PreferencesRepository
     private var mediaSession: MediaSession? = null
     private var autoStopJob: Job? = null
+    private var cachedPlaceholderBitmap: Bitmap? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +50,11 @@ class MagicMediaBridgeService : Service() {
         createNotificationChannel()
         initMediaSession()
         MediaRepository.setBridgeRunning(true)
+        scope.launch(Dispatchers.IO) {
+            cachedPlaceholderBitmap = runCatching {
+                BitmapFactory.decodeResource(resources, R.drawable.img_magic_album_art)
+            }.getOrNull()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -63,8 +71,6 @@ class MagicMediaBridgeService : Service() {
 
         scope.launch {
             val cfg = prefsRepo.getLockConfigSnapshot()
-            // Avoid double MediaStyle notifications while Media3 Hi-Res service owns active playback,
-            // or if user disabled the bridge or stopped all playback.
             if (!cfg.bridgeEnabled || MediaRepository.isHiResServiceOwningNotification()) {
                 stopBridgeCleanly()
                 return@launch
@@ -96,7 +102,7 @@ class MagicMediaBridgeService : Service() {
         val sleepActive = MediaRepository.sleepTimerState.value.isActive
         if (!media.isPlaying && !sleepActive) {
             autoStopJob = scope.launch {
-                delay(45_000L)
+                delay(25_000L)
                 val nowMedia = MediaRepository.mediaState.value
                 val nowSleep = MediaRepository.sleepTimerState.value.isActive
                 if (!nowMedia.isPlaying && !nowSleep) {
@@ -149,10 +155,14 @@ class MagicMediaBridgeService : Service() {
         mediaSession = session
     }
 
-    private fun publishNotification(cfg: LockAndQsConfig) {
+    private suspend fun publishNotification(cfg: LockAndQsConfig) {
         val session = mediaSession ?: return
         val media = MediaRepository.mediaState.value
-        val placeholderArt = BitmapFactory.decodeResource(resources, R.drawable.img_magic_album_art)
+        val placeholderArt = cachedPlaceholderBitmap ?: withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeResource(resources, R.drawable.img_magic_album_art) }
+                .getOrNull()
+                .also { cachedPlaceholderBitmap = it }
+        }
         val allowArtwork = cfg.showArtworkOnLockScreen && cfg.lockPrivacyLevel == LockPrivacyLevel.PUBLIC
         val artwork = if (allowArtwork) (media.albumArt ?: placeholderArt) else placeholderArt
 
@@ -161,7 +171,7 @@ class MagicMediaBridgeService : Service() {
             .putString(MediaMetadata.METADATA_KEY_ARTIST, "${media.artist} • ${media.service.displayName}")
             .putString(MediaMetadata.METADATA_KEY_ALBUM, media.album)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, media.durationMs)
-        if (allowArtwork) {
+        if (allowArtwork && artwork != null && !artwork.isRecycled) {
             metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork)
         }
         session.setMetadata(metaBuilder.build())
@@ -284,7 +294,7 @@ class MagicMediaBridgeService : Service() {
             .addAction(action4)
             .setStyle(mediaStyle)
 
-        if (allowArtwork) {
+        if (allowArtwork && artwork != null && !artwork.isRecycled) {
             builder.setLargeIcon(Icon.createWithBitmap(artwork))
         }
 

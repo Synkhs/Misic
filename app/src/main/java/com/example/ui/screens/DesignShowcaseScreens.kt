@@ -1,9 +1,6 @@
 package com.example.ui.screens
 
 import android.content.res.Configuration
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,18 +24,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.outlined.Album
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.ImageSearch
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,14 +55,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.core.artwork.LocalArtworkDiagnostics
+import com.example.core.artwork.SessionArtworkDebugState
 import com.example.data.CustomControlAction
 import com.example.data.MusicServiceApp
 import com.example.data.UnifiedMediaState
@@ -73,7 +73,7 @@ import com.example.designsystem.SurfaceToneStyle
 import com.example.designsystem.ThemeMode
 import com.example.designsystem.ThemePreferences
 import com.example.designsystem.VioletSeedColor
-import com.example.designsystem.buildArtworkTintedBrush
+import com.example.designsystem.buildArtworkTonalSurface
 import com.example.ui.components.CoverGridItem
 import com.example.ui.components.EqualizerBand
 import com.example.ui.components.EqualizerPreset
@@ -98,8 +98,9 @@ import com.example.ui.components.TrackItemVariant
 import com.example.ui.components.TrackListItemModel
 
 enum class ShowcaseDestination(val title: String) {
-    GALLERY("Componentes Material 3"),
-    TEST_HOME("Prueba 1 · Inicio"),
+    GALLERY("Componentes M3 Expressive"),
+    ARTWORK_INSPECTOR("Inspector de Carátulas"),
+    TEST_HOME("Prueba 1 · Biblioteca"),
     TEST_NOW_PLAYING("Prueba 2 · Ahora suena"),
     TEST_EQUALIZER("Prueba 3 · Ecualizador"),
 }
@@ -118,6 +119,9 @@ fun DesignShowcaseHostScreen(
     appThemePreferences: ThemePreferences,
     media: UnifiedMediaState,
     artworkColors: ArtworkPaletteColors,
+    localArtworkDiagnostics: LocalArtworkDiagnostics = LocalArtworkDiagnostics(),
+    sessionArtworkDebug: SessionArtworkDebugState = SessionArtworkDebugState(),
+    onClearArtworkCache: () -> Unit = {},
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -164,7 +168,7 @@ fun DesignShowcaseHostScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(tokens.backgroundBrush)
+                .background(tokens.backgroundColor)
                 .testTag("showcase_container"),
         ) {
             // Top bar + instant mode switcher (Oscuro / Tonal / Claro / AMOLED)
@@ -244,6 +248,12 @@ fun DesignShowcaseHostScreen(
                         onPlayPause = onPlayPause,
                         onNext = onNext,
                         onPrevious = onPrevious,
+                    )
+                    ShowcaseDestination.ARTWORK_INSPECTOR -> ArtworkInspectorView(
+                        media = media,
+                        localDiagnostics = localArtworkDiagnostics,
+                        sessionDebug = sessionArtworkDebug,
+                        onClearArtworkCache = onClearArtworkCache,
                     )
                     ShowcaseDestination.TEST_HOME -> TestHomePreviewScreen(
                         media = media,
@@ -439,11 +449,12 @@ fun ComponentsGalleryView(
                 ) {
                     MagicBottomNavBar(
                         items = listOf(
-                            NavItemUiModel("home", "Inicio", Icons.Rounded.Home, Icons.Outlined.Home, "prev_nav_home"),
-                            NavItemUiModel("services", "Servicios", Icons.Rounded.Album, Icons.Outlined.Album, "prev_nav_services"),
+                            NavItemUiModel("library", "Biblioteca", Icons.Rounded.LibraryMusic, Icons.Outlined.LibraryMusic, "prev_nav_library"),
+                            NavItemUiModel("equalizer", "Ecualizador", Icons.Rounded.GraphicEq, Icons.Outlined.GraphicEq, "prev_nav_eq"),
+                            NavItemUiModel("style", "Estilo", Icons.Rounded.Palette, Icons.Outlined.Palette, "prev_nav_style"),
                             NavItemUiModel("settings", "Ajustes", Icons.Rounded.Settings, Icons.Outlined.Settings, "prev_nav_settings"),
                         ),
-                        selectedId = "home",
+                        selectedId = "library",
                         onSelect = {},
                     )
                 }
@@ -684,30 +695,20 @@ fun TestNowPlayingPreviewScreen(
     var selectedTimerMin by remember { mutableIntStateOf(30) }
     var fadeOut by remember { mutableStateOf(true) }
 
-    val bgBrush = if (useArtworkTint) {
-        buildArtworkTintedBrush(
+    val bgColor = if (useArtworkTint) {
+        buildArtworkTonalSurface(
             artworkColors = artworkColors,
             baseBackground = colors.background,
             isDark = tokens.isDark,
         )
     } else {
-        tokens.backgroundBrush
-    }
-
-    val blurModifier = if (showContextSheet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        Modifier.graphicsLayer {
-            renderEffect = RenderEffect.createBlurEffect(20f, 20f, Shader.TileMode.CLAMP)
-                .asComposeRenderEffect()
-        }
-    } else {
-        Modifier
+        tokens.backgroundColor
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgBrush)
-            .then(blurModifier)
+            .background(bgColor)
             .testTag("test_screen_now_playing"),
     ) {
         Column(
@@ -1035,11 +1036,108 @@ private fun sampleLyricsLines(): List<String> = listOf(
     "mientras todo el ruido se vuelve silencio.",
 )
 
-@Preview(name = "Test Inicio - Tonal", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun ArtworkInspectorView(
+    media: UnifiedMediaState,
+    localDiagnostics: LocalArtworkDiagnostics,
+    sessionDebug: SessionArtworkDebugState,
+    onClearArtworkCache: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val tokens = MagicTheme.tokens
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("artwork_inspector_list"),
+        contentPadding = PaddingValues(tokens.spacing.screenMargin),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            MagicSurfaceCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    MagicAlbumArtwork(
+                        bitmap = media.albumArt,
+                        artworkModel = media.albumArt ?: media.albumArtUri,
+                        contentDescription = "Carátula inspeccionada",
+                        cornerRadius = 16.dp,
+                        fallbackTint = colors.primary,
+                        modifier = Modifier.size(64.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sesión MediaSession activa",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.onSurface,
+                        )
+                        Text(
+                            text = "Estado estabilizador: ${sessionDebug.status.name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.primary,
+                        )
+                        Text(
+                            text = "TrackKey: ${sessionDebug.activeTrackKey.ifBlank { "—" }}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Bitmap válido: ${sessionDebug.hasBitmap} (${sessionDebug.bitmapSizeLabel})\n" +
+                        "URI: ${sessionDebug.artUri ?: "ninguna"}\n" +
+                        "Aciertos KEEP_LAST_GOOD: ${sessionDebug.keepLastGoodHits} • Marcos uniformes rechazados: ${sessionDebug.rejectedUniformFrames} • Reintentos URI: ${sessionDebug.uriRetries}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+        }
+
+        item {
+            MagicSurfaceCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Rounded.ImageSearch, contentDescription = null, tint = colors.primary)
+                    Text(
+                        text = "Pipeline Local Pre-Reproducción (Coil)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Aciertos caché disco: ${localDiagnostics.cacheHits}\n" +
+                        "Decodificaciones realizadas: ${localDiagnostics.decodedCount}\n" +
+                        "Último origen resuelto: ${localDiagnostics.lastSource.name}\n" +
+                        "Último tiempo decodificación: ${localDiagnostics.lastDecodeMs} ms (track #${localDiagnostics.lastTrackId})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                FilledTonalButton(
+                    onClick = onClearArtworkCache,
+                    modifier = Modifier.fillMaxWidth().testTag("clear_artwork_cache_btn"),
+                ) {
+                    Icon(Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Vaciar caché de carátulas")
+                }
+            }
+        }
+    }
+}
+
+@Preview(name = "Test Biblioteca - Tonal", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun TestHomePreview() {
     MagicMusicTheme(themePreferences = ThemePreferences()) {
-        Box(modifier = Modifier.background(MagicTheme.tokens.backgroundBrush)) {
+        Box(modifier = Modifier.background(MagicTheme.tokens.backgroundColor)) {
             TestHomePreviewScreen(
                 media = UnifiedMediaState(),
                 onPlayPause = {},
@@ -1074,7 +1172,7 @@ private fun TestNowPlayingPreview() {
 private fun TestEqualizerLightPreview() {
     val light = ThemePreferences(themeMode = ThemeMode.LIGHT, surfaceToneStyle = SurfaceToneStyle.LIGHT)
     MagicMusicTheme(themePreferences = light) {
-        Box(modifier = Modifier.background(MagicTheme.tokens.backgroundBrush)) {
+        Box(modifier = Modifier.background(MagicTheme.tokens.backgroundColor)) {
             TestEqualizerPreviewScreen(
                 media = UnifiedMediaState(),
                 onPlayPause = {},

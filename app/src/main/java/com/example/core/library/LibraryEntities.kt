@@ -14,6 +14,8 @@ import androidx.room.PrimaryKey
         Index(value = ["folderPath"]),
         Index(value = ["title"]),
         Index(value = ["dateModified"]),
+        Index(value = ["playCount"]),
+        Index(value = ["isFavorite"]),
     ],
 )
 data class LocalTrackEntity(
@@ -36,6 +38,7 @@ data class LocalTrackEntity(
     val playCount: Int = 0,
     val lastPlayedMs: Long = 0L,
     val isFavorite: Boolean = false,
+    val artworkStatus: String = "PENDING",
 )
 
 @Entity(tableName = "local_playlists")
@@ -75,6 +78,22 @@ data class PlaylistTrackCrossRef(
     val addedAtMs: Long,
 )
 
+@Entity(
+    tableName = "track_bookmarks",
+    indices = [
+        Index(value = ["trackKey"]),
+        Index(value = ["createdAtMs"]),
+    ],
+)
+@Immutable
+data class TrackBookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val trackKey: String,
+    val positionMs: Long,
+    val label: String,
+    val createdAtMs: Long = System.currentTimeMillis(),
+)
+
 data class TrackTimestampTuple(
     val id: Long,
     val dateModified: Long,
@@ -87,6 +106,8 @@ data class AlbumSummary(
     val artist: String,
     val albumArtUri: String,
     val trackCount: Int,
+    val sampleTrackId: Long = 0L,
+    val sampleContentUri: String = "",
 )
 
 @Immutable

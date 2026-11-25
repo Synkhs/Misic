@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.runtime.Composable
+import com.example.core.library.TrackBookmarkEntity
 import com.example.data.AudioOutputDevice
 import com.example.designsystem.ArtworkPaletteColors
 import com.example.ui.MagicMusicUiState
@@ -10,6 +11,9 @@ import com.example.ui.components.NowPlayingDeckContent
 fun NowPlayingScreen(
     state: MagicMusicUiState,
     artworkColors: ArtworkPaletteColors,
+    positionMs: Long = state.media.positionMs,
+    durationMs: Long = state.media.durationMs,
+    bookmarks: List<TrackBookmarkEntity> = emptyList(),
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -21,6 +25,11 @@ fun NowPlayingScreen(
     onToggleRepeat: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenQueue: () -> Unit,
+    onSkipToQueueItem: (Long) -> Unit = {},
+    onReorderLocalQueue: (Int, Int) -> Unit = { _, _ -> },
+    onClearLocalQueue: () -> Unit = {},
+    onAddBookmark: (String, Long?) -> Unit = { _, _ -> },
+    onDeleteBookmark: (Long) -> Unit = {},
     onStartSleepTimerCountdown: (Int, Boolean) -> Unit,
     onStartSleepTimerEndOfTrack: (Boolean) -> Unit,
     onToggleSleepFade: (Boolean) -> Unit,
@@ -37,6 +46,9 @@ fun NowPlayingScreen(
         sleepTimer = state.sleepTimer,
         audioOutputs = state.audioOutputs,
         artworkColors = artworkColors,
+        positionMs = positionMs,
+        durationMs = durationMs,
+        bookmarks = bookmarks,
         isLockScreenMode = false,
         initialVolumePercent = state.playerState.volumePercent,
         onBackOrClose = onBack,
@@ -50,6 +62,11 @@ fun NowPlayingScreen(
         onToggleRepeat = onToggleRepeat,
         onOpenLyrics = onOpenLyrics,
         onOpenQueue = onOpenQueue,
+        onSkipToQueueItem = onSkipToQueueItem,
+        onReorderLocalQueue = onReorderLocalQueue,
+        onClearLocalQueue = onClearLocalQueue,
+        onAddBookmark = onAddBookmark,
+        onDeleteBookmark = onDeleteBookmark,
         onStartSleepTimerCountdown = onStartSleepTimerCountdown,
         onStartSleepTimerEndOfTrack = onStartSleepTimerEndOfTrack,
         onToggleSleepFade = onToggleSleepFade,

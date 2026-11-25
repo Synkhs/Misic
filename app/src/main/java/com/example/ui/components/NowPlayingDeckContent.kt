@@ -1,11 +1,9 @@
 package com.example.ui.components
 
 import android.content.Intent
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -24,6 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,9 +33,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BluetoothAudio
+import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -42,14 +48,18 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -57,16 +67,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -74,7 +88,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.R
+import com.example.core.library.TrackBookmarkEntity
 import com.example.core.media.SleepTimerManager
 import com.example.core.media.SleepTimerMode
 import com.example.core.media.SleepTimerState
@@ -84,7 +102,11 @@ import com.example.data.LockPrivacyLevel
 import com.example.data.UnifiedMediaState
 import com.example.designsystem.ArtworkPaletteColors
 import com.example.designsystem.MagicTheme
-import com.example.designsystem.buildArtworkTintedBrush
+import com.example.designsystem.buildArtworkTonalSurface
+import com.example.designsystem.expressive.MagicFloatingToolbarBar
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +115,9 @@ fun NowPlayingDeckContent(
     sleepTimer: SleepTimerState,
     audioOutputs: List<AudioOutputDevice>,
     artworkColors: ArtworkPaletteColors,
+    positionMs: Long = media.positionMs,
+    durationMs: Long = media.durationMs,
+    bookmarks: List<TrackBookmarkEntity> = emptyList(),
     isLockScreenMode: Boolean = false,
     isKeyguardLocked: Boolean = false,
     lockPrivacyLevel: LockPrivacyLevel = LockPrivacyLevel.PUBLIC,
@@ -111,6 +136,11 @@ fun NowPlayingDeckContent(
     onToggleRepeat: () -> Unit,
     onOpenLyrics: () -> Unit = {},
     onOpenQueue: () -> Unit = {},
+    onSkipToQueueItem: (Long) -> Unit = {},
+    onReorderLocalQueue: (Int, Int) -> Unit = { _, _ -> },
+    onClearLocalQueue: () -> Unit = {},
+    onAddBookmark: (String, Long?) -> Unit = { _, _ -> },
+    onDeleteBookmark: (Long) -> Unit = {},
     onStartSleepTimerCountdown: (Int, Boolean) -> Unit,
     onStartSleepTimerEndOfTrack: (Boolean) -> Unit,
     onToggleSleepFade: (Boolean) -> Unit,
@@ -133,6 +163,8 @@ fun NowPlayingDeckContent(
     var showTimerSheet by remember { mutableStateOf(false) }
     var showVolumeSheet by remember { mutableStateOf(false) }
     var showOutputSheet by remember { mutableStateOf(false) }
+    var showBookmarksSheet by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
 
     val hideMetadataForPrivacy = isLockScreenMode &&
         isKeyguardLocked &&
@@ -142,45 +174,34 @@ fun NowPlayingDeckContent(
     } else {
         media.albumArt
     }
-    val displayTitle = when {
-        hideMetadataForPrivacy -> "Contenido multimedia privado"
-        else -> media.title
+    val effectiveArtworkModel = if (isLockScreenMode && (!showArtworkOnLockScreen || hideMetadataForPrivacy)) {
+        null
+    } else {
+        media.albumArt ?: media.albumArtUri
     }
-    val displayArtist = when {
-        hideMetadataForPrivacy -> "Desbloquea para ver detalles de la pista"
-        else -> media.artist
-    }
+    val displayTitle = if (hideMetadataForPrivacy) "Contenido multimedia privado" else media.title
+    val displayArtist = if (hideMetadataForPrivacy) "Desbloquea para ver detalles de la pista" else media.artist
     val displaySubtitleHeader = when {
         hideMetadataForPrivacy -> "Pantalla de bloqueo • Privacidad activa"
         isLockScreenMode -> "${media.service.displayName} • Bloqueo"
-        media.hasActiveMedia -> "Reproduciendo desde ${media.service.displayName}"
+        media.hasActiveMedia -> media.service.displayName
         else -> "Sin sesión activa"
     }
 
-    val anySheetOpen = showContextMenu || showTimerSheet || showVolumeSheet || showOutputSheet
-
-    val bgBrush = if (tokens.colorFromArtwork && !hideMetadataForPrivacy) {
-        buildArtworkTintedBrush(
+    val flatBackgroundColor = if (tokens.colorFromArtwork && !hideMetadataForPrivacy) {
+        buildArtworkTonalSurface(
             artworkColors = artworkColors,
             baseBackground = colors.background,
             isDark = tokens.isDark,
         )
     } else {
-        tokens.backgroundBrush
-    }
-
-    val blurModifier = if (anySheetOpen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !tokens.motion.reduceAnimations) {
-        Modifier.graphicsLayer {
-            renderEffect = RenderEffect.createBlurEffect(18f, 18f, Shader.TileMode.CLAMP).asComposeRenderEffect()
-        }
-    } else {
-        Modifier
+        tokens.backgroundColor
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgBrush)
+            .background(flatBackgroundColor)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -197,12 +218,11 @@ fun NowPlayingDeckContent(
             modifier = Modifier
                 .widthIn(max = 580.dp)
                 .fillMaxSize()
-                .then(blurModifier)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = tokens.spacing.screenMargin, vertical = tokens.spacing.sm),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // Top bar
+            // Top bar with M3 Expressive tertiaryContainer audio-quality badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -246,12 +266,26 @@ fun NowPlayingDeckContent(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (!hideMetadataForPrivacy && media.streamFormatBadge.isNotBlank()) {
+                            Surface(
+                                shape = CircleShape,
+                                color = colors.tertiaryContainer,
+                            ) {
+                                Text(
+                                    text = media.streamFormatBadge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.onTertiaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
                     }
                     if (!hideMetadataForPrivacy && media.album.isNotBlank() && media.hasActiveMedia) {
                         Text(
                             text = media.album,
                             style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant.copy(alpha = 0.8f),
+                            color = colors.onSurfaceVariant.copy(alpha = 0.85f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -293,20 +327,21 @@ fun NowPlayingDeckContent(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Large square artwork with 28dp rounded corners
+            // Large Artwork honoring Estilo's selected ArtworkShapeStyle
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
                 MagicAlbumArtwork(
                     bitmap = effectiveArtwork,
+                    artworkModel = effectiveArtworkModel,
                     contentDescription = displayTitle,
                     cornerRadius = tokens.radii.artworkLarge,
                     fallbackTint = if (hideMetadataForPrivacy) colors.primary else artworkColors.dominant,
                     modifier = Modifier
-                        .fillMaxWidth(0.86f)
+                        .fillMaxWidth(0.84f)
                         .aspectRatio(1f)
                         .let { mod ->
                             if (isLockScreenMode && media.packageName.isNotBlank()) {
@@ -321,9 +356,25 @@ fun NowPlayingDeckContent(
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Title + Artist + conditional Favorite
+            // Lifecycle-aware flat tonal 14-bar Canvas audio visualizer
+            if (!hideMetadataForPrivacy) {
+                TonalAudioVisualizerStrip(
+                    isPlaying = media.isPlaying && media.hasActiveMedia,
+                    reduceAnimations = tokens.motion.reduceAnimations,
+                    barColor = colors.primary,
+                    mutedColor = colors.outlineVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp)
+                        .padding(horizontal = 12.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Title + Artist + Favorite
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -365,17 +416,16 @@ fun NowPlayingDeckContent(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Shared playback controls (slider + play/pause + -15s/+15s + Volume + Output)
             MagicPlaybackControls(
-                positionMs = media.positionMs,
-                durationMs = media.durationMs,
+                positionMs = positionMs,
+                durationMs = durationMs,
                 isPlaying = media.isPlaying,
                 shuffleEnabled = media.isShuffleEnabled,
                 repeatEnabled = media.isRepeatEnabled,
                 onSeekFraction = { frac ->
                     onUserInteraction()
-                    if (media.canSeek && media.durationMs > 0L) {
-                        onSeekTo((frac * media.durationMs).toLong())
+                    if (media.canSeek && durationMs > 0L) {
+                        onSeekTo((frac * durationMs).toLong())
                     }
                 },
                 onPlayPause = {
@@ -400,11 +450,11 @@ fun NowPlayingDeckContent(
                 },
                 onRewind15 = {
                     onUserInteraction()
-                    onSeekBy(-15_000L)
+                    onSeekBy(-10_000L)
                 },
                 onForward15 = {
                     onUserInteraction()
-                    onSeekBy(15_000L)
+                    onSeekBy(10_000L)
                 },
                 onVolumeClick = {
                     onUserInteraction()
@@ -417,13 +467,12 @@ fun NowPlayingDeckContent(
                 },
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Bottom bar: Lock screen custom actions OR NowPlaying Lyrics/Queue/SleepTimer
             if (isLockScreenMode) {
                 Surface(
                     shape = RoundedCornerShape(tokens.radii.card),
-                    color = colors.surfaceContainerHigh.copy(alpha = 0.85f),
+                    color = colors.surfaceContainerHigh,
                     border = BorderStroke(1.dp, tokens.semantic.divider),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -470,70 +519,59 @@ fun NowPlayingDeckContent(
                     }
                 }
             } else {
-                Surface(
-                    shape = RoundedCornerShape(tokens.radii.card),
-                    color = colors.surfaceContainerHigh.copy(alpha = 0.85f),
-                    border = BorderStroke(1.dp, tokens.semantic.divider),
+                // Expressive Floating Toolbar: Letras / Temporizador / Marcas(N) / Cola(N)
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .pointerInput(Unit) {
                             detectVerticalDragGestures { _, dragAmount ->
-                                if (dragAmount < -28f) {
-                                    onOpenLyrics()
-                                }
+                                if (dragAmount < -28f) onOpenLyrics()
                             }
                         },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                    MagicFloatingToolbarBar(
+                        useExpressiveM3 = tokens.useExpressiveM3,
+                        containerColor = colors.surfaceContainerHigh,
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable(onClick = onOpenLyrics)
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
-                                .testTag("now_playing_lyrics_btn"),
+                        IconButton(
+                            onClick = onOpenLyrics,
+                            modifier = Modifier.testTag("now_playing_lyrics_btn"),
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Lyrics,
                                 contentDescription = stringResource(R.string.action_lyrics),
                                 tint = colors.primary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Text(
-                                text = stringResource(R.string.action_lyrics),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = colors.onSurface,
                             )
                         }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(
-                                onClick = onOpenQueue,
-                                modifier = Modifier.testTag("now_playing_queue_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
-                                    contentDescription = stringResource(R.string.action_queue),
-                                    tint = colors.onSurfaceVariant,
-                                )
-                            }
-                            IconButton(
-                                onClick = { showTimerSheet = true },
-                                modifier = Modifier.testTag("now_playing_timer_btn"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Bedtime,
-                                    contentDescription = stringResource(R.string.timer_title),
-                                    tint = if (sleepTimer.isActive) colors.primary else colors.onSurfaceVariant,
-                                )
-                            }
+                        IconButton(
+                            onClick = { showTimerSheet = true },
+                            modifier = Modifier.testTag("now_playing_timer_btn"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Bedtime,
+                                contentDescription = stringResource(R.string.timer_title),
+                                tint = if (sleepTimer.isActive) colors.primary else colors.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = { showBookmarksSheet = true },
+                            modifier = Modifier.testTag("now_playing_bookmarks_btn"),
+                        ) {
+                            Icon(Icons.Rounded.Bookmark, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Marcas (${bookmarks.size})", maxLines = 1)
+                        }
+                        TextButton(
+                            onClick = {
+                                if (media.queue.isNotEmpty()) showQueueSheet = true
+                                else onOpenQueue()
+                            },
+                            modifier = Modifier.testTag("now_playing_queue_btn"),
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Cola (${media.queue.size})", maxLines = 1)
                         }
                     }
                 }
@@ -546,6 +584,7 @@ fun NowPlayingDeckContent(
             title = media.title,
             artist = media.artist,
             bitmap = media.albumArt,
+            artworkModel = media.albumArt ?: media.albumArtUri,
             onDismiss = { showContextMenu = false },
             onActionSelected = { label ->
                 when {
@@ -620,6 +659,298 @@ fun NowPlayingDeckContent(
             },
             onDismiss = { showOutputSheet = false },
         )
+    }
+
+    if (showBookmarksSheet) {
+        BookmarksModalSheet(
+            positionMs = positionMs,
+            bookmarks = bookmarks,
+            onAddBookmark = { label -> onAddBookmark(label, positionMs) },
+            onJumpToBookmark = { pos ->
+                onSeekTo(pos)
+                showBookmarksSheet = false
+            },
+            onDeleteBookmark = onDeleteBookmark,
+            onDismiss = { showBookmarksSheet = false },
+        )
+    }
+
+    if (showQueueSheet) {
+        QueueModalSheet(
+            media = media,
+            onShuffle = onToggleShuffle,
+            onClear = onClearLocalQueue,
+            onSkipToItem = { qId ->
+                onSkipToQueueItem(qId)
+                showQueueSheet = false
+            },
+            onReorder = onReorderLocalQueue,
+            onOpenFullQueue = {
+                showQueueSheet = false
+                onOpenQueue()
+            },
+            onDismiss = { showQueueSheet = false },
+        )
+    }
+}
+
+@Composable
+private fun TonalAudioVisualizerStrip(
+    isPlaying: Boolean,
+    reduceAnimations: Boolean,
+    barColor: androidx.compose.ui.graphics.Color,
+    mutedColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isVisible by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) isVisible = true
+            else if (event == Lifecycle.Event.ON_STOP) isVisible = false
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    var phaseTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(isPlaying, reduceAnimations, isVisible) {
+        if (isPlaying && !reduceAnimations && isVisible) {
+            while (true) {
+                phaseTick++
+                delay(90L)
+            }
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        val bars = 14
+        val slot = size.width / bars
+        val barWidth = (slot * 0.56f).coerceAtLeast(4f)
+        for (i in 0 until bars) {
+            val amp = if (isPlaying && !reduceAnimations) {
+                0.28f + 0.68f * abs(sin((phaseTick * 0.35f) + i * 0.65f))
+            } else if (isPlaying) {
+                0.35f + 0.45f * ((i % 4) / 3f)
+            } else {
+                0.22f
+            }
+            val barH = (size.height * amp).coerceAtLeast(4f)
+            val left = i * slot + (slot - barWidth) / 2f
+            val top = (size.height - barH) / 2f
+            drawRoundRect(
+                color = if (isPlaying) barColor else mutedColor,
+                topLeft = Offset(left, top),
+                size = Size(barWidth, barH),
+                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BookmarksModalSheet(
+    positionMs: Long,
+    bookmarks: List<TrackBookmarkEntity>,
+    onAddBookmark: (String) -> Unit,
+    onJumpToBookmark: (Long) -> Unit,
+    onDeleteBookmark: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tokens = MagicTheme.tokens
+    val colors = MaterialTheme.colorScheme
+    var labelDraft by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = tokens.radii.sheet, topEnd = tokens.radii.sheet),
+        containerColor = colors.surfaceContainerHigh,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = tokens.spacing.screenMargin)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Marcas de tiempo",
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onSurface,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = labelDraft,
+                    onValueChange = { labelDraft = it },
+                    label = { Text("Etiqueta en ${formatTimeMs(positionMs)}") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = {
+                        onAddBookmark(labelDraft)
+                        labelDraft = ""
+                    },
+                    modifier = Modifier.testTag("bookmark_add_btn"),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Añadir marca", modifier = Modifier.size(18.dp))
+                }
+            }
+            if (bookmarks.isEmpty()) {
+                Text(
+                    text = "Guarda fragmentos favoritos o solos de guitarra para saltar con un toque.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.height(240.dp),
+                ) {
+                    items(bookmarks, key = { it.id }) { bm ->
+                        Surface(
+                            onClick = { onJumpToBookmark(bm.positionMs) },
+                            shape = RoundedCornerShape(tokens.radii.listItem),
+                            color = colors.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = colors.tertiaryContainer,
+                                ) {
+                                    Text(
+                                        text = formatTimeMs(bm.positionMs),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = colors.onTertiaryContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    )
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = bm.label,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = colors.onSurface,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconButton(onClick = { onDeleteBookmark(bm.id) }) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Borrar marca", tint = colors.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QueueModalSheet(
+    media: UnifiedMediaState,
+    onShuffle: () -> Unit,
+    onClear: () -> Unit,
+    onSkipToItem: (Long) -> Unit,
+    onReorder: (Int, Int) -> Unit,
+    onOpenFullQueue: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val tokens = MagicTheme.tokens
+    val colors = MaterialTheme.colorScheme
+    val canReorder = media.isLocalEngine && media.queue.size > 1
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = tokens.radii.sheet, topEnd = tokens.radii.sheet),
+        containerColor = colors.surfaceContainerHigh,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = tokens.spacing.screenMargin)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Cola (${media.queue.size})",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onSurface,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilledTonalButton(onClick = onShuffle) {
+                        Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Mezclar")
+                    }
+                    if (media.isLocalEngine) {
+                        OutlinedButton(onClick = onClear) {
+                            Text("Limpiar")
+                        }
+                    }
+                }
+            }
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.height(320.dp),
+            ) {
+                itemsIndexed(media.queue, key = { idx, item -> "${item.queueId}_$idx" }) { idx, item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MagicTrackListItem(
+                            item = TrackListItemModel(
+                                id = item.queueId.toString(),
+                                title = item.title,
+                                artist = item.artist,
+                                durationLabel = if (item.durationMs > 0L) formatTimeMs(item.durationMs) else "",
+                                trackNumber = idx + 1,
+                                bitmap = if (item.isCurrent) media.albumArt else null,
+                            ),
+                            variant = if (item.isCurrent) TrackItemVariant.HIGHLIGHTED_CURRENT else TrackItemVariant.NUMBERED,
+                            onClick = { onSkipToItem(item.queueId) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (canReorder) {
+                            Column {
+                                IconButton(
+                                    enabled = idx > 0,
+                                    onClick = { onReorder(idx, idx - 1) },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Subir", modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(
+                                    enabled = idx < media.queue.lastIndex,
+                                    onClick = { onReorder(idx, idx + 1) },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(Icons.Rounded.ArrowDownward, contentDescription = "Bajar", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            TextButton(onClick = onOpenFullQueue, modifier = Modifier.align(Alignment.End)) {
+                Text("Ver pantalla completa de Cola")
+            }
+        }
     }
 }
 

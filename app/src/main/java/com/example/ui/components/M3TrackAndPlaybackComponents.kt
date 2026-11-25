@@ -24,9 +24,7 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Share
@@ -59,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.designsystem.MagicTheme
+import com.example.designsystem.expressive.MagicLinearWavyProgress
+import com.example.designsystem.expressive.MagicPlayPauseMorphButton
 
 enum class TrackItemVariant {
     DEFAULT,
@@ -75,6 +75,8 @@ data class TrackListItemModel(
     val durationLabel: String = "",
     val trackNumber: Int = 1,
     val bitmap: Bitmap? = null,
+    val artworkModel: Any? = null,
+    val formatBadge: String = "",
     val accentTint: Color? = null,
 )
 
@@ -93,8 +95,8 @@ fun MagicTrackListItem(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(tokens.radii.listItem),
-        color = if (isCurrent) tokens.semantic.selectedContainer.copy(alpha = 0.65f) else tokens.semantic.cardSurface,
-        border = if (isCurrent) BorderStroke(1.dp, colors.primary.copy(alpha = 0.55f)) else null,
+        color = if (isCurrent) colors.primaryContainer.copy(alpha = 0.72f) else colors.surfaceContainer,
+        border = if (isCurrent) BorderStroke(1.5.dp, colors.primary) else null,
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
@@ -127,6 +129,7 @@ fun MagicTrackListItem(
 
             MagicAlbumArtwork(
                 bitmap = item.bitmap,
+                artworkModel = item.artworkModel ?: item.bitmap,
                 contentDescription = item.title,
                 cornerRadius = 12.dp,
                 fallbackTint = item.accentTint,
@@ -140,21 +143,41 @@ fun MagicTrackListItem(
                     text = item.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                    color = if (isCurrent) colors.primary else colors.onSurface,
+                    color = if (isCurrent) colors.onPrimaryContainer else colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = if (item.durationLabel.isNotBlank()) {
-                        "${item.artist} • ${item.durationLabel}"
-                    } else {
-                        item.artist
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = if (item.durationLabel.isNotBlank()) {
+                            "${item.artist} • ${item.durationLabel}"
+                        } else {
+                            item.artist
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isCurrent) colors.onPrimaryContainer.copy(alpha = 0.8f) else colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (item.formatBadge.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = colors.tertiaryContainer,
+                        ) {
+                            Text(
+                                text = item.formatBadge,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
             }
 
             if (isCurrent) {
@@ -169,7 +192,7 @@ fun MagicTrackListItem(
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
                         contentDescription = "Más opciones",
-                        tint = colors.onSurfaceVariant,
+                        tint = if (isCurrent) colors.onPrimaryContainer else colors.onSurfaceVariant,
                     )
                 }
             }
@@ -201,17 +224,28 @@ fun MagicPlaybackControls(
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
-        0.42f
+        0f
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
+        if (tokens.useExpressiveM3 && isPlaying && !tokens.motion.reduceAnimations) {
+            MagicLinearWavyProgress(
+                progress = progress,
+                isPlaying = true,
+                useExpressiveM3 = true,
+                reduceAnimations = false,
+                color = colors.primary,
+                trackColor = colors.surfaceContainerHighest,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         Slider(
             value = progress,
             onValueChange = onSeekFraction,
             colors = SliderDefaults.colors(
                 thumbColor = colors.primary,
                 activeTrackColor = colors.primary,
-                inactiveTrackColor = colors.onSurface.copy(alpha = 0.22f),
+                inactiveTrackColor = colors.surfaceContainerHighest,
             ),
             modifier = Modifier.fillMaxWidth(),
         )
@@ -228,7 +262,7 @@ fun MagicPlaybackControls(
                 color = colors.onSurfaceVariant,
             )
             Text(
-                text = if (durationMs > 0L) formatTimeMs(durationMs) else "3:28",
+                text = if (durationMs > 0L) formatTimeMs(durationMs) else "0:00",
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.onSurfaceVariant,
             )
@@ -259,22 +293,15 @@ fun MagicPlaybackControls(
                     modifier = Modifier.size(34.dp),
                 )
             }
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(tokens.semantic.playButtonSurface)
-                    .clickable(onClick = onPlayPause)
-                    .testTag("playback_main_play_pause"),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = "Reproducir o pausar",
-                    tint = tokens.semantic.onPlayButtonSurface,
-                    modifier = Modifier.size(36.dp),
-                )
-            }
+            MagicPlayPauseMorphButton(
+                isPlaying = isPlaying,
+                useExpressiveM3 = tokens.useExpressiveM3,
+                onClick = onPlayPause,
+                size = 76.dp,
+                containerColor = colors.primary,
+                contentColor = colors.onPrimary,
+                modifier = Modifier.testTag("playback_main_play_pause"),
+            )
             IconButton(
                 onClick = onNext,
                 modifier = Modifier.size(48.dp),
@@ -305,14 +332,14 @@ fun MagicPlaybackControls(
                 if (onRewind15 != null) {
                     QuickDeckActionChip(
                         icon = Icons.Rounded.Replay10,
-                        label = "-15s",
+                        label = "-10s",
                         onClick = onRewind15,
                     )
                 }
                 if (onForward15 != null) {
                     QuickDeckActionChip(
                         icon = Icons.Rounded.Forward10,
-                        label = "+15s",
+                        label = "+10s",
                         onClick = onForward15,
                     )
                 }
@@ -345,7 +372,7 @@ private fun QuickDeckActionChip(
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = colors.surfaceContainerHigh.copy(alpha = 0.7f),
+        color = colors.surfaceContainerHigh,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -375,6 +402,7 @@ fun MagicContextMenuSheet(
     bitmap: Bitmap?,
     onDismiss: () -> Unit,
     onActionSelected: (String) -> Unit,
+    artworkModel: Any? = null,
 ) {
     val tokens = MagicTheme.tokens
     val colors = MaterialTheme.colorScheme
@@ -396,6 +424,7 @@ fun MagicContextMenuSheet(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MagicAlbumArtwork(
                     bitmap = bitmap,
+                    artworkModel = artworkModel ?: bitmap,
                     contentDescription = title,
                     cornerRadius = 14.dp,
                     modifier = Modifier.size(54.dp),

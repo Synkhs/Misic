@@ -11,10 +11,18 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.designsystem.ColorRoleOverrides
+import com.example.designsystem.ContrastPreset
 import com.example.designsystem.DEFAULT_VIOLET_SEED_ARGB
+import com.example.designsystem.McuSchemeVariant
+import com.example.designsystem.SavedColorProfile
 import com.example.designsystem.SurfaceToneStyle
 import com.example.designsystem.ThemeMode
 import com.example.designsystem.ThemePreferences
+import com.example.designsystem.expressive.ArtworkShapeStyle
+import com.example.designsystem.expressive.GeometryPreset
+import com.example.designsystem.expressive.MiniPlayerStyle
+import com.example.designsystem.expressive.NavLabelVisibility
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -38,6 +46,7 @@ class PreferencesRepository(private val context: Context) {
         val LEFT_CUSTOM_ACTION = stringPreferencesKey("widget_left_custom_action")
         val RIGHT_CUSTOM_ACTION = stringPreferencesKey("widget_right_custom_action")
         val WIDGET_TEMPLATES_JSON = stringPreferencesKey("widget_templates_json")
+        val WIDGET_INSTANCES_JSON = stringPreferencesKey("widget_instances_json")
 
         val BRIDGE_ENABLED = booleanPreferencesKey("lock_bridge_enabled")
         val SHOW_ON_LOCK_SCREEN = booleanPreferencesKey("lock_show_on_lock_screen")
@@ -62,29 +71,50 @@ class PreferencesRepository(private val context: Context) {
         val IGNORE_VIDEO_SESSIONS = booleanPreferencesKey("ignore_video_sessions")
         val DISABLED_PACKAGES = stringSetPreferencesKey("disabled_media_packages")
 
-        // Material 3 ThemePreferences keys
+        // Material 3 & Expressive ThemePreferences keys
         val USE_DYNAMIC_COLOR = booleanPreferencesKey("app_use_dynamic_color")
         val THEME_MODE = stringPreferencesKey("app_theme_mode")
         val SURFACE_TONE_STYLE = stringPreferencesKey("app_surface_tone_style")
         val SEED_COLOR_ARGB = longPreferencesKey("app_seed_color_argb")
+        val SCHEME_VARIANT = stringPreferencesKey("app_scheme_variant")
+        val CONTRAST_LEVEL = stringPreferencesKey("app_contrast_level")
         val PURE_AMOLED_BLACK = booleanPreferencesKey("app_pure_amoled_black")
         val COLOR_FROM_ARTWORK = booleanPreferencesKey("app_color_from_artwork")
         val REDUCE_ANIMATIONS = booleanPreferencesKey("app_reduce_animations")
+        val USE_EXPRESSIVE_M3 = booleanPreferencesKey("app_use_expressive_m3")
+        val HAPTIC_FEEDBACK = booleanPreferencesKey("app_haptic_feedback")
+        val GEOMETRY_PRESET = stringPreferencesKey("app_geometry_preset")
+        val ARTWORK_SHAPE = stringPreferencesKey("app_artwork_shape")
+        val NAV_LABEL_VISIBILITY = stringPreferencesKey("app_nav_label_visibility")
+        val MINI_PLAYER_STYLE = stringPreferencesKey("app_mini_player_style")
+        val LIBRARY_GRID_COLUMNS = intPreferencesKey("app_library_grid_columns")
+        val LYRICS_AUTO_SCROLL = booleanPreferencesKey("app_lyrics_auto_scroll")
+        val LYRICS_FONT_SCALE = floatPreferencesKey("app_lyrics_font_scale")
+        val OVERRIDE_PRIMARY_ARGB = longPreferencesKey("app_override_primary")
+        val OVERRIDE_SECONDARY_ARGB = longPreferencesKey("app_override_secondary")
+        val OVERRIDE_TERTIARY_ARGB = longPreferencesKey("app_override_tertiary")
+        val OVERRIDE_SURFACE_ARGB = longPreferencesKey("app_override_surface")
+        val SAVED_COLOR_PROFILES_JSON = stringPreferencesKey("app_saved_color_profiles_json")
 
         // Equalizer & Hi-Res
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
         val EQ_PRESET_INDEX = intPreferencesKey("eq_preset_index")
+        val EQ_CUSTOM_PRESET_NAME = stringPreferencesKey("eq_custom_preset_name")
         val EQ_BANDS_CSV = stringPreferencesKey("eq_bands_csv")
         val EQ_ADVANCED_MODE = booleanPreferencesKey("eq_advanced_mode")
         val EQ_HIRES_BUFFER = booleanPreferencesKey("eq_hires_buffer")
         val EQ_BASS_BOOST = intPreferencesKey("eq_bass_boost")
+        val EQ_VIRTUALIZER = intPreferencesKey("eq_virtualizer")
         val EQ_LOUDNESS_GAIN = intPreferencesKey("eq_loudness_gain")
+        val EQ_PREAMP_DB = floatPreferencesKey("eq_preamp_db")
+        val EQ_STEREO_BALANCE = floatPreferencesKey("eq_stereo_balance")
         val HIRES_GAPLESS = booleanPreferencesKey("hires_gapless")
         val HIRES_CROSSFADE_SEC = intPreferencesKey("hires_crossfade_sec")
         val HIRES_REPLAY_GAIN = booleanPreferencesKey("hires_replay_gain")
         val HIRES_FLOAT_24BIT = booleanPreferencesKey("hires_float_24bit")
         val EQ_ACTIVE_OUTPUT_CATEGORY = stringPreferencesKey("eq_active_output_category")
         val EQ_DEVICE_PROFILES_JSON = stringPreferencesKey("eq_device_profiles_blob")
+        val EQ_CUSTOM_PRESETS_JSON = stringPreferencesKey("eq_custom_presets_json")
 
         // Local stats & history & favorites & playlists
         val STATS_TOTAL_SECONDS = longPreferencesKey("stats_total_seconds")
@@ -109,6 +139,14 @@ class PreferencesRepository(private val context: Context) {
         .map { prefs -> mapWidgetTemplates(prefs) }
         .distinctUntilChanged()
 
+    val widgetInstancesFlow: Flow<Map<Int, WidgetInstanceConfig>> = context.magicMusicDataStore.data
+        .map { prefs -> WidgetTemplateSerializer.decodeWidgetInstances(prefs[Keys.WIDGET_INSTANCES_JSON].orEmpty()) }
+        .distinctUntilChanged()
+
+    val savedColorProfilesFlow: Flow<List<SavedColorProfile>> = context.magicMusicDataStore.data
+        .map { prefs -> WidgetTemplateSerializer.decodeColorProfiles(prefs[Keys.SAVED_COLOR_PROFILES_JSON].orEmpty()) }
+        .distinctUntilChanged()
+
     val lockAndQsConfigFlow: Flow<LockAndQsConfig> = context.magicMusicDataStore.data
         .map { prefs -> mapLockConfig(prefs) }
         .distinctUntilChanged()
@@ -123,6 +161,10 @@ class PreferencesRepository(private val context: Context) {
 
     val equalizerConfigFlow: Flow<EqualizerConfig> = context.magicMusicDataStore.data
         .map { prefs -> mapEqualizerConfig(prefs) }
+        .distinctUntilChanged()
+
+    val customEqPresetsFlow: Flow<List<CustomEqPreset>> = context.magicMusicDataStore.data
+        .map { prefs -> WidgetTemplateSerializer.decodeCustomEqPresets(prefs[Keys.EQ_CUSTOM_PRESETS_JSON].orEmpty()) }
         .distinctUntilChanged()
 
     val localStatsFlow: Flow<LocalListeningStats> = context.magicMusicDataStore.data
@@ -147,6 +189,37 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun getWidgetConfigSnapshot(): WidgetConfig =
         mapWidgetConfig(context.magicMusicDataStore.data.first())
+
+    suspend fun getWidgetInstanceConfig(appWidgetId: Int): WidgetInstanceConfig {
+        val prefs = context.magicMusicDataStore.data.first()
+        val map = WidgetTemplateSerializer.decodeWidgetInstances(prefs[Keys.WIDGET_INSTANCES_JSON].orEmpty())
+        val existing = map[appWidgetId]
+        if (existing != null) return existing
+        val global = mapWidgetConfig(prefs)
+        val theme = mapThemePreferences(prefs)
+        return WidgetInstanceConfig(
+            appWidgetId = appWidgetId,
+            style = global.style,
+            colorSource = WidgetColorSource.FOLLOW_APP,
+            seedColorArgb = theme.seedColorArgb,
+            schemeVariant = theme.schemeVariant,
+            themeMode = theme.themeMode,
+            contrastLevel = theme.contrastLevel,
+            roleOverrides = theme.roleOverrides,
+            cornerRadiusDp = global.cornerRadiusDp,
+            containerOpacity = global.glassOpacity,
+            showProgressBar = global.showProgressBar,
+            showServiceBadge = global.showServiceBadge,
+            showCompactHeader = global.showCompactHeader,
+            leftCustomAction = global.leftCustomAction,
+            rightCustomAction = global.rightCustomAction,
+        )
+    }
+
+    suspend fun getWidgetInstancesSnapshot(): Map<Int, WidgetInstanceConfig> =
+        WidgetTemplateSerializer.decodeWidgetInstances(
+            context.magicMusicDataStore.data.first()[Keys.WIDGET_INSTANCES_JSON].orEmpty(),
+        )
 
     suspend fun getLockConfigSnapshot(): LockAndQsConfig =
         mapLockConfig(context.magicMusicDataStore.data.first())
@@ -203,6 +276,53 @@ class PreferencesRepository(private val context: Context) {
             prefs.remove(Keys.LEGACY_SHOW_CAPSULE_HEADER)
             prefs[Keys.LEFT_CUSTOM_ACTION] = updated.leftCustomAction.name
             prefs[Keys.RIGHT_CUSTOM_ACTION] = updated.rightCustomAction.name
+        }
+    }
+
+    suspend fun updateWidgetInstanceConfig(
+        appWidgetId: Int,
+        transform: (WidgetInstanceConfig) -> WidgetInstanceConfig,
+    ) {
+        context.magicMusicDataStore.edit { prefs ->
+            val map = WidgetTemplateSerializer.decodeWidgetInstances(
+                prefs[Keys.WIDGET_INSTANCES_JSON].orEmpty(),
+            ).toMutableMap()
+            val theme = mapThemePreferences(prefs)
+            val global = mapWidgetConfig(prefs)
+            val current = map[appWidgetId] ?: WidgetInstanceConfig(
+                appWidgetId = appWidgetId,
+                style = global.style,
+                seedColorArgb = theme.seedColorArgb,
+                schemeVariant = theme.schemeVariant,
+                themeMode = theme.themeMode,
+                contrastLevel = theme.contrastLevel,
+                roleOverrides = theme.roleOverrides,
+                cornerRadiusDp = global.cornerRadiusDp,
+                containerOpacity = global.glassOpacity,
+                showProgressBar = global.showProgressBar,
+                showServiceBadge = global.showServiceBadge,
+                showCompactHeader = global.showCompactHeader,
+                leftCustomAction = global.leftCustomAction,
+                rightCustomAction = global.rightCustomAction,
+            )
+            map[appWidgetId] = transform(current).copy(appWidgetId = appWidgetId)
+            prefs[Keys.WIDGET_INSTANCES_JSON] = WidgetTemplateSerializer.encodeWidgetInstances(map)
+        }
+    }
+
+    suspend fun deleteWidgetInstances(appWidgetIds: IntArray) {
+        if (appWidgetIds.isEmpty()) return
+        context.magicMusicDataStore.edit { prefs ->
+            val map = WidgetTemplateSerializer.decodeWidgetInstances(
+                prefs[Keys.WIDGET_INSTANCES_JSON].orEmpty(),
+            ).toMutableMap()
+            var changed = false
+            appWidgetIds.forEach { id ->
+                if (map.remove(id) != null) changed = true
+            }
+            if (changed) {
+                prefs[Keys.WIDGET_INSTANCES_JSON] = WidgetTemplateSerializer.encodeWidgetInstances(map)
+            }
         }
     }
 
@@ -270,6 +390,63 @@ class PreferencesRepository(private val context: Context) {
         return decoded.size
     }
 
+    suspend fun saveColorProfile(name: String, themePrefs: ThemePreferences) {
+        context.magicMusicDataStore.edit { prefs ->
+            val list = WidgetTemplateSerializer.decodeColorProfiles(
+                prefs[Keys.SAVED_COLOR_PROFILES_JSON].orEmpty(),
+            ).toMutableList()
+            list.add(
+                0,
+                SavedColorProfile(
+                    id = "clr_${System.currentTimeMillis()}",
+                    name = name.trim().ifBlank { "Paleta ${list.size + 1}" },
+                    seedColorArgb = themePrefs.seedColorArgb,
+                    variant = themePrefs.schemeVariant,
+                    themeMode = themePrefs.themeMode,
+                    surfaceToneStyle = themePrefs.surfaceToneStyle,
+                    contrastPreset = themePrefs.contrastLevel,
+                    pureAmoled = themePrefs.pureAmoledBlack,
+                    overrides = themePrefs.roleOverrides,
+                ),
+            )
+            prefs[Keys.SAVED_COLOR_PROFILES_JSON] = WidgetTemplateSerializer.encodeColorProfiles(list.take(16))
+        }
+    }
+
+    suspend fun deleteColorProfile(profileId: String) {
+        context.magicMusicDataStore.edit { prefs ->
+            val updated = WidgetTemplateSerializer.decodeColorProfiles(
+                prefs[Keys.SAVED_COLOR_PROFILES_JSON].orEmpty(),
+            ).filterNot { it.id == profileId }
+            prefs[Keys.SAVED_COLOR_PROFILES_JSON] = WidgetTemplateSerializer.encodeColorProfiles(updated)
+        }
+    }
+
+    suspend fun exportColorProfilesJson(): String {
+        val list = WidgetTemplateSerializer.decodeColorProfiles(
+            context.magicMusicDataStore.data.first()[Keys.SAVED_COLOR_PROFILES_JSON].orEmpty(),
+        )
+        return WidgetTemplateSerializer.encodeColorProfiles(list)
+    }
+
+    suspend fun importColorProfilesJson(rawJson: String): Int {
+        val decoded = WidgetTemplateSerializer.decodeColorProfiles(rawJson)
+        if (decoded.isEmpty()) return 0
+        context.magicMusicDataStore.edit { prefs ->
+            val cur = WidgetTemplateSerializer.decodeColorProfiles(
+                prefs[Keys.SAVED_COLOR_PROFILES_JSON].orEmpty(),
+            ).toMutableList()
+            val ids = cur.map { it.id }.toMutableSet()
+            decoded.forEach { p ->
+                val unique = if (ids.contains(p.id)) p.copy(id = "clr_imp_${System.currentTimeMillis()}_${ids.size}") else p
+                ids.add(unique.id)
+                cur.add(0, unique)
+            }
+            prefs[Keys.SAVED_COLOR_PROFILES_JSON] = WidgetTemplateSerializer.encodeColorProfiles(cur.take(16))
+        }
+        return decoded.size
+    }
+
     suspend fun updateLockAndQsConfig(transform: (LockAndQsConfig) -> LockAndQsConfig) {
         context.magicMusicDataStore.edit { prefs ->
             val updated = transform(mapLockConfig(prefs))
@@ -308,9 +485,24 @@ class PreferencesRepository(private val context: Context) {
             prefs[Keys.THEME_MODE] = updated.themeMode.name
             prefs[Keys.SURFACE_TONE_STYLE] = updated.surfaceToneStyle.name
             prefs[Keys.SEED_COLOR_ARGB] = updated.seedColorArgb
+            prefs[Keys.SCHEME_VARIANT] = updated.schemeVariant.name
+            prefs[Keys.CONTRAST_LEVEL] = updated.contrastLevel.name
             prefs[Keys.PURE_AMOLED_BLACK] = updated.pureAmoledBlack
             prefs[Keys.COLOR_FROM_ARTWORK] = updated.colorFromArtwork
             prefs[Keys.REDUCE_ANIMATIONS] = updated.reduceAnimations
+            prefs[Keys.USE_EXPRESSIVE_M3] = updated.useExpressiveM3
+            prefs[Keys.HAPTIC_FEEDBACK] = updated.hapticFeedbackEnabled
+            prefs[Keys.GEOMETRY_PRESET] = updated.geometryPreset.name
+            prefs[Keys.ARTWORK_SHAPE] = updated.artworkShape.name
+            prefs[Keys.NAV_LABEL_VISIBILITY] = updated.navLabelVisibility.name
+            prefs[Keys.MINI_PLAYER_STYLE] = updated.miniPlayerStyle.name
+            prefs[Keys.LIBRARY_GRID_COLUMNS] = updated.libraryGridColumns.coerceIn(2, 3)
+            prefs[Keys.LYRICS_AUTO_SCROLL] = updated.lyricsAutoScroll
+            prefs[Keys.LYRICS_FONT_SCALE] = updated.lyricsFontScale.coerceIn(0.85f, 1.4f)
+            prefs[Keys.OVERRIDE_PRIMARY_ARGB] = updated.roleOverrides.primaryArgb ?: 0L
+            prefs[Keys.OVERRIDE_SECONDARY_ARGB] = updated.roleOverrides.secondaryArgb ?: 0L
+            prefs[Keys.OVERRIDE_TERTIARY_ARGB] = updated.roleOverrides.tertiaryArgb ?: 0L
+            prefs[Keys.OVERRIDE_SURFACE_ARGB] = updated.roleOverrides.surfaceArgb ?: 0L
             prefs.remove(Keys.LEGACY_THEME_ID)
             prefs.remove(Keys.LEGACY_FINISH)
         }
@@ -326,21 +518,61 @@ class PreferencesRepository(private val context: Context) {
                 presetIndex = updated.presetIndex,
                 bandGainsDb = updated.bandGainsDb,
                 bassBoostStrength = updated.bassBoostStrength,
+                virtualizerStrength = updated.virtualizerStrength,
                 loudnessGainMb = updated.loudnessGainMb,
+                preampGainDb = updated.preampGainDb,
+                stereoBalance = updated.stereoBalance,
             )
             prefs[Keys.EQ_ENABLED] = updated.enabled
             prefs[Keys.EQ_PRESET_INDEX] = updated.presetIndex
+            prefs[Keys.EQ_CUSTOM_PRESET_NAME] = updated.customPresetName
             prefs[Keys.EQ_BANDS_CSV] = updated.bandGainsDb.joinToString(",")
             prefs[Keys.EQ_ADVANCED_MODE] = updated.isAdvancedMode
             prefs[Keys.EQ_HIRES_BUFFER] = updated.hiResBufferHigh
             prefs[Keys.EQ_BASS_BOOST] = updated.bassBoostStrength.coerceIn(0, 1000)
+            prefs[Keys.EQ_VIRTUALIZER] = updated.virtualizerStrength.coerceIn(0, 1000)
             prefs[Keys.EQ_LOUDNESS_GAIN] = updated.loudnessGainMb.coerceIn(0, 1000)
+            prefs[Keys.EQ_PREAMP_DB] = updated.preampGainDb.coerceIn(-6f, 6f)
+            prefs[Keys.EQ_STEREO_BALANCE] = updated.stereoBalance.coerceIn(-1f, 1f)
             prefs[Keys.HIRES_GAPLESS] = updated.gaplessEnabled
             prefs[Keys.HIRES_CROSSFADE_SEC] = updated.crossfadeSeconds.coerceIn(0, 12)
             prefs[Keys.HIRES_REPLAY_GAIN] = updated.replayGainEnabled
             prefs[Keys.HIRES_FLOAT_24BIT] = updated.float24BitOutput
             prefs[Keys.EQ_ACTIVE_OUTPUT_CATEGORY] = updated.activeOutputCategory.name
             prefs[Keys.EQ_DEVICE_PROFILES_JSON] = encodeDeviceEqProfiles(updatedProfiles)
+        }
+    }
+
+    suspend fun saveCustomEqPreset(name: String, config: EqualizerConfig) {
+        context.magicMusicDataStore.edit { prefs ->
+            val current = WidgetTemplateSerializer.decodeCustomEqPresets(
+                prefs[Keys.EQ_CUSTOM_PRESETS_JSON].orEmpty(),
+            ).toMutableList()
+            val cleanName = name.trim().ifBlank { "Mi Curva ${current.size + 1}" }
+            current.removeAll { it.name.equals(cleanName, ignoreCase = true) }
+            current.add(
+                0,
+                CustomEqPreset(
+                    id = "eq_${System.currentTimeMillis()}",
+                    name = cleanName,
+                    bandGainsDb = config.bandGainsDb,
+                    bassBoostStrength = config.bassBoostStrength,
+                    virtualizerStrength = config.virtualizerStrength,
+                    loudnessGainMb = config.loudnessGainMb,
+                    preampGainDb = config.preampGainDb,
+                ),
+            )
+            prefs[Keys.EQ_CUSTOM_PRESETS_JSON] = WidgetTemplateSerializer.encodeCustomEqPresets(current.take(15))
+            prefs[Keys.EQ_CUSTOM_PRESET_NAME] = cleanName
+        }
+    }
+
+    suspend fun deleteCustomEqPreset(presetId: String) {
+        context.magicMusicDataStore.edit { prefs ->
+            val filtered = WidgetTemplateSerializer.decodeCustomEqPresets(
+                prefs[Keys.EQ_CUSTOM_PRESETS_JSON].orEmpty(),
+            ).filterNot { it.id == presetId }
+            prefs[Keys.EQ_CUSTOM_PRESETS_JSON] = WidgetTemplateSerializer.encodeCustomEqPresets(filtered)
         }
     }
 
@@ -354,7 +586,10 @@ class PreferencesRepository(private val context: Context) {
                 presetIndex = cur.presetIndex,
                 bandGainsDb = cur.bandGainsDb,
                 bassBoostStrength = cur.bassBoostStrength,
+                virtualizerStrength = cur.virtualizerStrength,
                 loudnessGainMb = cur.loudnessGainMb,
+                preampGainDb = cur.preampGainDb,
+                stereoBalance = cur.stereoBalance,
             )
             val allProfiles = cur.deviceProfiles.toMutableMap()
             allProfiles[cur.activeOutputCategory] = savedCurrent
@@ -364,7 +599,10 @@ class PreferencesRepository(private val context: Context) {
             prefs[Keys.EQ_PRESET_INDEX] = target.presetIndex
             prefs[Keys.EQ_BANDS_CSV] = target.bandGainsDb.joinToString(",")
             prefs[Keys.EQ_BASS_BOOST] = target.bassBoostStrength
+            prefs[Keys.EQ_VIRTUALIZER] = target.virtualizerStrength
             prefs[Keys.EQ_LOUDNESS_GAIN] = target.loudnessGainMb
+            prefs[Keys.EQ_PREAMP_DB] = target.preampGainDb
+            prefs[Keys.EQ_STEREO_BALANCE] = target.stereoBalance
             prefs[Keys.EQ_DEVICE_PROFILES_JSON] = encodeDeviceEqProfiles(allProfiles)
         }
     }
@@ -382,7 +620,7 @@ class PreferencesRepository(private val context: Context) {
         serviceId: String,
         durationMs: Long,
     ) {
-        if (title.isBlank() || title == "Sin música activa") return
+        if (title.isBlank() || title == "Sin música activa" || title == "Sin reproducción activa") return
         context.magicMusicDataStore.edit { prefs ->
             val list = WidgetTemplateSerializer.decodeHistory(prefs[Keys.RECENT_TRACKS_JSON].orEmpty()).toMutableList()
             val idx = list.indexOfFirst { it.id == trackKey }
@@ -426,7 +664,6 @@ class PreferencesRepository(private val context: Context) {
 
             val daily = parseDailyCsv(prefs[Keys.STATS_DAILY_MINUTES_CSV]).toMutableList()
             val dayIdx = currentDayOfWeekMonFirstIndex()
-            // Add 1 minute every 60 accumulated seconds
             if ((nextSecs / 60L) > (prevSecs / 60L)) {
                 val deltaMin = ((nextSecs / 60L) - (prevSecs / 60L)).toInt()
                 daily[dayIdx] = (daily[dayIdx] + deltaMin).coerceAtLeast(0)
@@ -487,6 +724,9 @@ class PreferencesRepository(private val context: Context) {
             append("surfaceTone=").append(t.surfaceToneStyle.name).append(";")
             append("dynamic=").append(t.useDynamicColor).append(";")
             append("seed=").append(t.seedColorArgb).append(";")
+            append("variant=").append(t.schemeVariant.name).append(";")
+            append("contrast=").append(t.contrastLevel.name).append(";")
+            append("expressive=").append(t.useExpressiveM3).append(";")
             append("amoled=").append(t.pureAmoledBlack).append(";")
             append("artworkTint=").append(t.colorFromArtwork).append(";")
             append("bridge=").append(l.bridgeEnabled).append(";")
@@ -523,6 +763,9 @@ class PreferencesRepository(private val context: Context) {
                 surfaceToneStyle = enumValueOrDefault(parts["surfaceTone"], cur.surfaceToneStyle),
                 useDynamicColor = parts["dynamic"]?.toBooleanStrictOrNull() ?: cur.useDynamicColor,
                 seedColorArgb = parts["seed"]?.toLongOrNull() ?: cur.seedColorArgb,
+                schemeVariant = enumValueOrDefault(parts["variant"], cur.schemeVariant),
+                contrastLevel = enumValueOrDefault(parts["contrast"], cur.contrastLevel),
+                useExpressiveM3 = parts["expressive"]?.toBooleanStrictOrNull() ?: cur.useExpressiveM3,
                 pureAmoledBlack = parts["amoled"]?.toBooleanStrictOrNull() ?: cur.pureAmoledBlack,
                 colorFromArtwork = parts["artworkTint"]?.toBooleanStrictOrNull() ?: cur.colorFromArtwork,
             )
@@ -627,9 +870,26 @@ class PreferencesRepository(private val context: Context) {
             themeMode = themeMode,
             surfaceToneStyle = surfaceTone,
             seedColorArgb = prefs[Keys.SEED_COLOR_ARGB] ?: DEFAULT_VIOLET_SEED_ARGB,
+            schemeVariant = enumValueOrDefault(prefs[Keys.SCHEME_VARIANT], McuSchemeVariant.TONAL_SPOT),
+            contrastLevel = enumValueOrDefault(prefs[Keys.CONTRAST_LEVEL], ContrastPreset.STANDARD),
             pureAmoledBlack = prefs[Keys.PURE_AMOLED_BLACK] ?: false,
             colorFromArtwork = prefs[Keys.COLOR_FROM_ARTWORK] ?: true,
             reduceAnimations = prefs[Keys.REDUCE_ANIMATIONS] ?: false,
+            useExpressiveM3 = prefs[Keys.USE_EXPRESSIVE_M3] ?: true,
+            hapticFeedbackEnabled = prefs[Keys.HAPTIC_FEEDBACK] ?: true,
+            geometryPreset = enumValueOrDefault(prefs[Keys.GEOMETRY_PRESET], GeometryPreset.STANDARD_M3),
+            artworkShape = enumValueOrDefault(prefs[Keys.ARTWORK_SHAPE], ArtworkShapeStyle.ROUNDED),
+            navLabelVisibility = enumValueOrDefault(prefs[Keys.NAV_LABEL_VISIBILITY], NavLabelVisibility.ALWAYS),
+            miniPlayerStyle = enumValueOrDefault(prefs[Keys.MINI_PLAYER_STYLE], MiniPlayerStyle.CARD),
+            libraryGridColumns = (prefs[Keys.LIBRARY_GRID_COLUMNS] ?: 2).coerceIn(2, 3),
+            lyricsAutoScroll = prefs[Keys.LYRICS_AUTO_SCROLL] ?: true,
+            lyricsFontScale = (prefs[Keys.LYRICS_FONT_SCALE] ?: 1.0f).coerceIn(0.85f, 1.4f),
+            roleOverrides = ColorRoleOverrides(
+                primaryArgb = prefs[Keys.OVERRIDE_PRIMARY_ARGB]?.takeIf { it != 0L },
+                secondaryArgb = prefs[Keys.OVERRIDE_SECONDARY_ARGB]?.takeIf { it != 0L },
+                tertiaryArgb = prefs[Keys.OVERRIDE_TERTIARY_ARGB]?.takeIf { it != 0L },
+                surfaceArgb = prefs[Keys.OVERRIDE_SURFACE_ARGB]?.takeIf { it != 0L },
+            ),
         )
     }
 
@@ -646,11 +906,15 @@ class PreferencesRepository(private val context: Context) {
         return EqualizerConfig(
             enabled = prefs[Keys.EQ_ENABLED] ?: true,
             presetIndex = (prefs[Keys.EQ_PRESET_INDEX] ?: 0).coerceAtLeast(0),
+            customPresetName = prefs[Keys.EQ_CUSTOM_PRESET_NAME].orEmpty(),
             bandGainsDb = finalBands,
             isAdvancedMode = prefs[Keys.EQ_ADVANCED_MODE] ?: false,
             hiResBufferHigh = prefs[Keys.EQ_HIRES_BUFFER] ?: true,
             bassBoostStrength = (prefs[Keys.EQ_BASS_BOOST] ?: 0).coerceIn(0, 1000),
+            virtualizerStrength = (prefs[Keys.EQ_VIRTUALIZER] ?: 0).coerceIn(0, 1000),
             loudnessGainMb = (prefs[Keys.EQ_LOUDNESS_GAIN] ?: 0).coerceIn(0, 1000),
+            preampGainDb = (prefs[Keys.EQ_PREAMP_DB] ?: 0f).coerceIn(-6f, 6f),
+            stereoBalance = (prefs[Keys.EQ_STEREO_BALANCE] ?: 0f).coerceIn(-1f, 1f),
             gaplessEnabled = prefs[Keys.HIRES_GAPLESS] ?: true,
             crossfadeSeconds = (prefs[Keys.HIRES_CROSSFADE_SEC] ?: 0).coerceIn(0, 12),
             replayGainEnabled = prefs[Keys.HIRES_REPLAY_GAIN] ?: true,
@@ -674,6 +938,9 @@ class PreferencesRepository(private val context: Context) {
                 p.bandGainsDb.joinToString(","),
                 p.bassBoostStrength.toString(),
                 p.loudnessGainMb.toString(),
+                p.virtualizerStrength.toString(),
+                p.preampGainDb.toString(),
+                p.stereoBalance.toString(),
             ).joinToString(";")
         }
     }
@@ -693,6 +960,9 @@ class PreferencesRepository(private val context: Context) {
                 bandGainsDb = fixedBands,
                 bassBoostStrength = (cols[4].toIntOrNull() ?: 0).coerceIn(0, 1000),
                 loudnessGainMb = (cols[5].toIntOrNull() ?: 0).coerceIn(0, 1000),
+                virtualizerStrength = (cols.getOrNull(6)?.toIntOrNull() ?: 0).coerceIn(0, 1000),
+                preampGainDb = (cols.getOrNull(7)?.toFloatOrNull() ?: 0f).coerceIn(-6f, 6f),
+                stereoBalance = (cols.getOrNull(8)?.toFloatOrNull() ?: 0f).coerceIn(-1f, 1f),
             )
         }.toMap()
     }
@@ -737,7 +1007,7 @@ class PreferencesRepository(private val context: Context) {
         fun defaultWidgetTemplates(): List<WidgetTemplate> = listOf(
             WidgetTemplate(
                 id = "preset_tonal_card",
-                name = "Violeta Tonal 4×2",
+                name = "Lavanda Tonal 4×2",
                 format = WidgetFormat.CARD_4X2,
                 config = WidgetConfig(style = WidgetStyle.TONAL, cornerRadiusDp = 24, glassOpacity = 0.96f),
             ),
@@ -753,10 +1023,10 @@ class PreferencesRepository(private val context: Context) {
                 ),
             ),
             WidgetTemplate(
-                id = "preset_transparent_square",
-                name = "Cristal Limpio 2×2",
+                id = "preset_surface_square",
+                name = "Superficie M3 2×2",
                 format = WidgetFormat.SQUARE_2X2,
-                config = WidgetConfig(style = WidgetStyle.TRANSPARENT, cornerRadiusDp = 22, glassOpacity = 0.78f),
+                config = WidgetConfig(style = WidgetStyle.SURFACE, cornerRadiusDp = 24, glassOpacity = 0.95f),
             ),
         )
 

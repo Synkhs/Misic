@@ -21,6 +21,42 @@ interface LibraryDao {
     )
     fun pagingAllTracks(query: String): PagingSource<Int, LocalTrackEntity>
 
+    @Query(
+        """
+        SELECT * FROM local_tracks
+        WHERE (:query = '' OR title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')
+        ORDER BY artist COLLATE NOCASE ASC, album COLLATE NOCASE ASC, title COLLATE NOCASE ASC
+        """,
+    )
+    fun pagingTracksByArtistSort(query: String): PagingSource<Int, LocalTrackEntity>
+
+    @Query(
+        """
+        SELECT * FROM local_tracks
+        WHERE (:query = '' OR title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')
+        ORDER BY dateModified DESC
+        """,
+    )
+    fun pagingTracksByRecentSort(query: String): PagingSource<Int, LocalTrackEntity>
+
+    @Query(
+        """
+        SELECT * FROM local_tracks
+        WHERE (:query = '' OR title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')
+        ORDER BY playCount DESC, title COLLATE NOCASE ASC
+        """,
+    )
+    fun pagingTracksByMostPlayedSort(query: String): PagingSource<Int, LocalTrackEntity>
+
+    @Query(
+        """
+        SELECT * FROM local_tracks
+        WHERE (:query = '' OR title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')
+        ORDER BY durationMs DESC
+        """,
+    )
+    fun pagingTracksByDurationSort(query: String): PagingSource<Int, LocalTrackEntity>
+
     @Query("SELECT * FROM local_tracks WHERE albumId = :albumId ORDER BY id ASC")
     fun pagingTracksByAlbum(albumId: Long): PagingSource<Int, LocalTrackEntity>
 
@@ -32,6 +68,24 @@ interface LibraryDao {
 
     @Query("SELECT * FROM local_tracks WHERE lastPlayedMs > 0 ORDER BY lastPlayedMs DESC LIMIT :limit")
     fun observeRecentlyPlayedTracks(limit: Int = 12): Flow<List<LocalTrackEntity>>
+
+    @Query("SELECT * FROM local_tracks ORDER BY playCount DESC, lastPlayedMs DESC LIMIT :limit")
+    fun observeMostPlayedTracks(limit: Int = 25): Flow<List<LocalTrackEntity>>
+
+    @Query("SELECT * FROM local_tracks ORDER BY dateModified DESC LIMIT :limit")
+    fun observeRecentlyAddedTracks(limit: Int = 25): Flow<List<LocalTrackEntity>>
+
+    @Query("SELECT * FROM local_tracks WHERE isFavorite = 1 ORDER BY title COLLATE NOCASE ASC")
+    fun observeFavoriteTracks(): Flow<List<LocalTrackEntity>>
+
+    @Query("SELECT * FROM local_tracks WHERE playCount > 0 ORDER BY playCount DESC, lastPlayedMs DESC LIMIT 50")
+    suspend fun getMostPlayedSnapshot(): List<LocalTrackEntity>
+
+    @Query("SELECT * FROM local_tracks ORDER BY dateModified DESC LIMIT 50")
+    suspend fun getRecentlyAddedSnapshot(): List<LocalTrackEntity>
+
+    @Query("SELECT * FROM local_tracks WHERE isFavorite = 1 ORDER BY title COLLATE NOCASE ASC")
+    suspend fun getFavoritesSnapshot(): List<LocalTrackEntity>
 
     @Query("SELECT COUNT(*) FROM local_tracks")
     fun observeTrackCount(): Flow<Int>
@@ -76,9 +130,13 @@ interface LibraryDao {
     @Query("UPDATE local_tracks SET isFavorite = :favorite WHERE id = :trackId")
     suspend fun setTrackFavorite(trackId: Long, favorite: Boolean)
 
+    @Query("UPDATE local_tracks SET artworkStatus = :status WHERE id = :trackId")
+    suspend fun updateArtworkStatus(trackId: Long, status: String)
+
     @Query(
         """
-        SELECT albumId, album, artist, MAX(albumArtUri) AS albumArtUri, COUNT(*) AS trackCount
+        SELECT albumId, album, artist, MAX(albumArtUri) AS albumArtUri, COUNT(*) AS trackCount,
+               MIN(id) AS sampleTrackId, MAX(contentUri) AS sampleContentUri
         FROM local_tracks
         WHERE (:query = '' OR album LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%')
         GROUP BY albumId
@@ -168,4 +226,17 @@ interface LibraryDao {
             updatePlaylistTrackPosition(playlistId, trackId, idx)
         }
     }
+
+    // Track Bookmarks (Marcas)
+    @Query("SELECT * FROM track_bookmarks WHERE trackKey = :trackKey ORDER BY positionMs ASC")
+    fun observeBookmarksForTrack(trackKey: String): Flow<List<TrackBookmarkEntity>>
+
+    @Query("SELECT COUNT(*) FROM track_bookmarks WHERE trackKey = :trackKey")
+    fun observeBookmarkCount(trackKey: String): Flow<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmark(bookmark: TrackBookmarkEntity): Long
+
+    @Query("DELETE FROM track_bookmarks WHERE id = :bookmarkId")
+    suspend fun deleteBookmark(bookmarkId: Long)
 }

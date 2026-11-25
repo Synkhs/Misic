@@ -26,9 +26,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -54,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.example.designsystem.MagicTheme
 import com.example.designsystem.SeedColorSwatch
 import com.example.designsystem.SurfaceToneStyle
+import com.example.designsystem.expressive.MagicConnectedButtonGroup
 import kotlin.math.roundToInt
 
 @Immutable
@@ -91,42 +89,24 @@ fun MagicEqualizerPanel(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Mode segmented selector (Básico / Avanzado)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = !isAdvancedMode,
-                onClick = { onModeChange(false) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                modifier = Modifier.testTag("eq_mode_basic"),
-            ) {
-                Text("Básico")
-            }
-            SegmentedButton(
-                selected = isAdvancedMode,
-                onClick = { onModeChange(true) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                modifier = Modifier.testTag("eq_mode_advanced"),
-            ) {
-                Text("Avanzado")
-            }
-        }
+        MagicConnectedButtonGroup(
+            options = listOf("Básico", "Avanzado"),
+            selectedIndex = if (isAdvancedMode) 1 else 0,
+            labelProvider = { it },
+            useExpressiveM3 = tokens.useExpressiveM3,
+            onSelect = { idx, _ -> onModeChange(idx == 1) },
+            itemTestTagPrefix = "eq_mode_opt",
+        )
 
-        // Preset chips row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            EqualizerPreset.entries.take(4).forEach { preset ->
-                MagicFilterChip(
-                    label = preset.label,
-                    selected = selectedPreset == preset,
-                    onClick = { onSelectPreset(preset) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+        MagicConnectedButtonGroup(
+            options = EqualizerPreset.entries.take(4),
+            selectedIndex = EqualizerPreset.entries.take(4).indexOf(selectedPreset),
+            labelProvider = { it.label },
+            useExpressiveM3 = tokens.useExpressiveM3,
+            onSelect = { _, preset -> onSelectPreset(preset) },
+            itemTestTagPrefix = "eq_preset",
+        )
 
-        // Main dB vertical slider deck matching reference screen 17
         MagicSurfaceCard(
             cornerRadius = tokens.radii.card,
             contentPadding = tokens.spacing.md,
@@ -137,7 +117,6 @@ fun MagicEqualizerPanel(
                     .height(210.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // dB vertical scale
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
@@ -150,7 +129,6 @@ fun MagicEqualizerPanel(
                     Text("-12", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
                 }
 
-                // Vertical band sliders
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -224,33 +202,32 @@ private fun VerticalEqBandSlider(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            // Inactive vertical track
             Box(
                 modifier = Modifier
-                    .width(5.dp)
+                    .width(6.dp)
                     .fillMaxHeight()
                     .clip(CircleShape)
                     .background(tokens.semantic.divider),
             )
-            // Active vertical track from bottom
             Box(
                 modifier = Modifier
-                    .width(5.dp)
+                    .width(6.dp)
                     .fillMaxHeight(normalized)
                     .align(Alignment.BottomCenter)
                     .clip(CircleShape)
                     .background(colors.primary),
             )
-            // Thumb
-            val offsetY = ((1f - normalized) * (trackHeightPx - 36f)).roundToInt()
+            // M3 bar handle thumb
+            val offsetY = ((1f - normalized) * (trackHeightPx - 28f)).roundToInt()
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset { IntOffset(0, offsetY) }
-                    .size(18.dp)
+                    .width(16.dp)
+                    .height(6.dp)
                     .clip(CircleShape)
                     .background(colors.primary)
-                    .border(2.dp, colors.onPrimary, CircleShape),
+                    .border(1.5.dp, colors.onPrimary, CircleShape),
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
@@ -371,9 +348,9 @@ fun MagicModeThumbnailsSelector(
         SurfaceToneStyle.entries.forEach { style ->
             val selected = style == selectedTone
             val (bg, card, accent) = when (style) {
-                SurfaceToneStyle.DARK -> Triple(Color(0xFF100E14), Color(0xFF1E1B24), colors.primary)
-                SurfaceToneStyle.TONAL -> Triple(Color(0xFF16131A), Color(0xFF2B2630), Color(0xFFCDA9FF))
-                SurfaceToneStyle.LIGHT -> Triple(Color(0xFFFCF8FF), Color(0xFFE8E0EF), Color(0xFF6A45B5))
+                SurfaceToneStyle.DARK -> Triple(Color(0xFF101016), Color(0xFF1B1B24), colors.primary)
+                SurfaceToneStyle.TONAL -> Triple(Color(0xFF121218), Color(0xFF23232C), Color(0xFFC0C1FF))
+                SurfaceToneStyle.LIGHT -> Triple(Color(0xFFFAF9FF), Color(0xFFE5E5F0), Color(0xFF3A47B5))
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -456,7 +433,7 @@ fun MagicColorSwatchGrid(
                     .background(swatch.color)
                     .border(
                         width = if (selected) 3.dp else 1.dp,
-                        color = if (selected) colors.onBackground else Color.White.copy(alpha = 0.22f),
+                        color = if (selected) colors.onBackground else colors.outlineVariant,
                         shape = CircleShape,
                     )
                     .clickable { onSelectSwatch(swatch) }

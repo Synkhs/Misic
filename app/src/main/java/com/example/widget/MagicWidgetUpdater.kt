@@ -6,16 +6,16 @@ import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
-import android.graphics.Shader
 import android.os.Build
+import android.os.SystemClock
 import android.util.LruCache
 import android.util.SizeF
 import android.view.View
@@ -31,83 +31,104 @@ import com.example.data.TrackHistoryEntry
 import com.example.data.UnifiedMediaState
 import com.example.data.WidgetConfig
 import com.example.data.WidgetFormat
+import com.example.data.WidgetInstanceConfig
+import com.example.designsystem.ThemePreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 
 object MagicWidgetUpdater {
+
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var activeUpdateJob: Job? = null
 
     private var lastRenderSignature: String? = null
     private var lastProgressUpdateElapsedMs: Long = 0L
     private var lastPreviewPublishMs: Long = 0L
 
     private val artworkCache = object : LruCache<String, Bitmap>(16) {}
-    private val backgroundCache = object : LruCache<String, Bitmap>(16) {}
+    private val backgroundCache = object : LruCache<String, Bitmap>(24) {}
     private val dominantColorCache = object : LruCache<String, Int>(24) {}
 
+    @Volatile
+    private var cachedPlaceholderRaw: Bitmap? = null
+
     fun updateAllWidgets(context: Context, force: Boolean = false) {
-        val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
+        val appCtx = context.applicationContext
+        val appWidgetManager = AppWidgetManager.getInstance(appCtx) ?: return
         val capsuleIds = appWidgetManager.getAppWidgetIds(
-            ComponentName(context, MagicWidgetCapsuleProvider::class.java),
+            ComponentName(appCtx, MagicWidgetCapsuleProvider::class.java),
         )
         val cardIds = appWidgetManager.getAppWidgetIds(
-            ComponentName(context, MagicWidgetCardProvider::class.java),
+            ComponentName(appCtx, MagicWidgetCardProvider::class.java),
         )
         val squareIds = appWidgetManager.getAppWidgetIds(
-            ComponentName(context, MagicWidgetSquareProvider::class.java),
+            ComponentName(appCtx, MagicWidgetSquareProvider::class.java),
         )
         val miniIds = appWidgetManager.getAppWidgetIds(
-            ComponentName(context, MagicWidgetMiniProvider::class.java),
+            ComponentName(appCtx, MagicWidgetMiniProvider::class.java),
         )
 
         if (capsuleIds.isEmpty() && cardIds.isEmpty() && squareIds.isEmpty() && miniIds.isEmpty()) {
             return
         }
 
-        val media = MediaRepository.mediaState.value
-        val snapshot = readSnapshot(context)
+        activeUpdateJob?.cancel()
+        activeUpdateJob = ioScope.launch {
+            val media = MediaRepository.mediaState.value
+            val snapshot = readSnapshotSuspend(appCtx)
 
-        // Progress throttling: at most 1 update/sec while screen is on, unless metadata/playstate/config changed
-        val signatureWithoutProgress = buildSignatureWithoutProgress(media, snapshot.config, snapshot.preferredPkg)
-        val now = android.os.SystemClock.elapsedRealtime()
-        val progressBucket = (media.progressFraction * 100f).toInt()
-        val fullSignature = "$signatureWithoutProgress|p=$progressBucket"
-        if (!force && fullSignature == lastRenderSignature) {
-            return
-        }
-        val onlyProgressChanged = !force &&
-            lastRenderSignature?.substringBefore("|p=") == signatureWithoutProgress &&
-            (now - lastProgressUpdateElapsedMs) < 950L
-        if (onlyProgressChanged) {
-            return
-        }
-        lastRenderSignature = fullSignature
-        lastProgressUpdateElapsedMs = now
+            val signatureWithoutProgress = buildSignatureWithoutProgress(
+                media = media,
+                config = snapshot.config,
+                preferredPkg = snapshot.preferredPkg,
+                instancesHash = snapshot.instances.hashCode(),
+                themeHash = snapshot.themePrefs.hashCode(),
+            )
+            val now = SystemClock.elapsedRealtime()
+            val progressBucket = (media.progressFraction * 100f).toInt()
+            val fullSignature = "$signatureWithoutProgress|p=$progressBucket"
+            if (!force && fullSignature == lastRenderSignature) {
+                return@launch
+            }
+            val onlyProgressChanged = !force &&
+                lastRenderSignature?.substringBefore("|p=") == signatureWithoutProgress &&
+                (now - lastProgressUpdateElapsedMs) < 950L
+            if (onlyProgressChanged) {
+                return@launch
+            }
+            lastRenderSignature = fullSignature
+            lastProgressUpdateElapsedMs = now
 
-        val copy = WidgetRenderModel.resolveDisplayCopy(
-            media = media,
-            config = snapshot.config,
-            lastHistoryTrack = snapshot.lastHistoryTrack,
-            preferredPackage = snapshot.preferredPkg,
-        )
-        val artDominant = extractDominantColorCached(media)
-        val palette = WidgetRenderModel.resolvePalette(
-            style = snapshot.config.style,
-            glassOpacity = snapshot.config.glassOpacity,
-            dominantArtworkArgb = artDominant,
-            serviceAccentArgb = if (media.hasActiveMedia) media.service.accentColor.hashCode() else null,
-        )
+            val artDominant = extractDominantColorCached(media)
+            val systemIsDark = (appCtx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            val systemDynamicPrimary = readSystemDynamicPrimary(appCtx)
 
-        if (capsuleIds.isNotEmpty()) {
-            updateIds(context, appWidgetManager, capsuleIds, WidgetFormat.CAPSULE_4X1, media, snapshot.config, copy, palette)
-        }
-        if (cardIds.isNotEmpty()) {
-            updateIds(context, appWidgetManager, cardIds, WidgetFormat.CARD_4X2, media, snapshot.config, copy, palette)
-        }
-        if (squareIds.isNotEmpty()) {
-            updateIds(context, appWidgetManager, squareIds, WidgetFormat.SQUARE_2X2, media, snapshot.config, copy, palette)
-        }
-        if (miniIds.isNotEmpty()) {
-            updateIds(context, appWidgetManager, miniIds, WidgetFormat.MINI_2X1, media, snapshot.config, copy, palette)
+            val batches = listOf(
+                capsuleIds to WidgetFormat.CAPSULE_4X1,
+                cardIds to WidgetFormat.CARD_4X2,
+                squareIds to WidgetFormat.SQUARE_2X2,
+                miniIds to WidgetFormat.MINI_2X1,
+            )
+            batches.forEach { (ids, format) ->
+                if (ids.isNotEmpty()) {
+                    updateIds(
+                        context = appCtx,
+                        awm = appWidgetManager,
+                        ids = ids,
+                        defaultFormat = format,
+                        media = media,
+                        snapshot = snapshot,
+                        dominantArtworkArgb = artDominant,
+                        systemDynamicPrimaryArgb = systemDynamicPrimary,
+                        systemIsDark = systemIsDark,
+                    )
+                }
+            }
         }
     }
 
@@ -118,57 +139,64 @@ object MagicWidgetUpdater {
         defaultFormat: WidgetFormat,
     ) {
         if (appWidgetIds.isEmpty()) return
-        val media = MediaRepository.mediaState.value
-        val snapshot = readSnapshot(context)
-        val copy = WidgetRenderModel.resolveDisplayCopy(
-            media = media,
-            config = snapshot.config,
-            lastHistoryTrack = snapshot.lastHistoryTrack,
-            preferredPackage = snapshot.preferredPkg,
-        )
-        val palette = WidgetRenderModel.resolvePalette(
-            style = snapshot.config.style,
-            glassOpacity = snapshot.config.glassOpacity,
-            dominantArtworkArgb = extractDominantColorCached(media),
-            serviceAccentArgb = null,
-        )
-        updateIds(context, appWidgetManager, appWidgetIds, defaultFormat, media, snapshot.config, copy, palette)
+        val appCtx = context.applicationContext
+        ioScope.launch {
+            val media = MediaRepository.mediaState.value
+            val snapshot = readSnapshotSuspend(appCtx)
+            val artDominant = extractDominantColorCached(media)
+            val systemIsDark = (appCtx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            val systemDynamicPrimary = readSystemDynamicPrimary(appCtx)
+            updateIds(
+                context = appCtx,
+                awm = appWidgetManager,
+                ids = appWidgetIds,
+                defaultFormat = defaultFormat,
+                media = media,
+                snapshot = snapshot,
+                dominantArtworkArgb = artDominant,
+                systemDynamicPrimaryArgb = systemDynamicPrimary,
+                systemIsDark = systemIsDark,
+            )
+        }
     }
 
     fun publishGeneratedPreviewsIfSupported(context: Context) {
         if (!AndroidVersionCompat.supportsGeneratedWidgetPreview()) return
         val now = System.currentTimeMillis()
-        // AppWidgetManager.setWidgetPreview is rate-limited by the OS (~2/hour per provider)
         if (now - lastPreviewPublishMs < 30 * 60_000L) return
         lastPreviewPublishMs = now
+        val appCtx = context.applicationContext
 
-        val awm = AppWidgetManager.getInstance(context) ?: return
-        val media = MediaRepository.mediaState.value
-        val snapshot = readSnapshot(context)
-        val copy = WidgetRenderModel.resolveDisplayCopy(
-            media = media,
-            config = snapshot.config,
-            lastHistoryTrack = snapshot.lastHistoryTrack,
-            preferredPackage = snapshot.preferredPkg,
-        )
-        val palette = WidgetRenderModel.resolvePalette(
-            style = snapshot.config.style,
-            glassOpacity = snapshot.config.glassOpacity,
-            dominantArtworkArgb = extractDominantColorCached(media),
-            serviceAccentArgb = null,
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            val pairs = listOf(
-                ComponentName(context, MagicWidgetCapsuleProvider::class.java) to WidgetFormat.CAPSULE_4X1,
-                ComponentName(context, MagicWidgetCardProvider::class.java) to WidgetFormat.CARD_4X2,
-                ComponentName(context, MagicWidgetSquareProvider::class.java) to WidgetFormat.SQUARE_2X2,
-                ComponentName(context, MagicWidgetMiniProvider::class.java) to WidgetFormat.MINI_2X1,
+        ioScope.launch {
+            val awm = AppWidgetManager.getInstance(appCtx) ?: return@launch
+            val media = MediaRepository.mediaState.value
+            val snapshot = readSnapshotSuspend(appCtx)
+            val copy = WidgetRenderModel.resolveDisplayCopy(
+                media = media,
+                config = snapshot.config,
+                lastHistoryTrack = snapshot.lastHistoryTrack,
+                preferredPackage = snapshot.preferredPkg,
             )
-            pairs.forEach { (component, fmt) ->
-                runCatching {
-                    val rv = buildSingleFormatViews(context, fmt, media, snapshot.config, copy, palette)
-                    awm.setWidgetPreview(component, AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN, rv)
+            val palette = WidgetRenderModel.resolvePalette(
+                style = snapshot.config.style,
+                glassOpacity = snapshot.config.glassOpacity,
+                dominantArtworkArgb = extractDominantColorCached(media),
+                serviceAccentArgb = null,
+            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                val pairs = listOf(
+                    ComponentName(appCtx, MagicWidgetCapsuleProvider::class.java) to WidgetFormat.CAPSULE_4X1,
+                    ComponentName(appCtx, MagicWidgetCardProvider::class.java) to WidgetFormat.CARD_4X2,
+                    ComponentName(appCtx, MagicWidgetSquareProvider::class.java) to WidgetFormat.SQUARE_2X2,
+                    ComponentName(appCtx, MagicWidgetMiniProvider::class.java) to WidgetFormat.MINI_2X1,
+                )
+                pairs.forEach { (component, fmt) ->
+                    runCatching {
+                        val rv = buildSingleFormatViews(appCtx, fmt, media, snapshot.config, copy, palette)
+                        awm.setWidgetPreview(component, AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN, rv)
+                    }
                 }
             }
         }
@@ -180,26 +208,59 @@ object MagicWidgetUpdater {
         ids: IntArray,
         defaultFormat: WidgetFormat,
         media: UnifiedMediaState,
-        config: WidgetConfig,
-        copy: WidgetDisplayCopy,
-        palette: WidgetPaletteArgb,
+        snapshot: WidgetSnapshot,
+        dominantArtworkArgb: Int?,
+        systemDynamicPrimaryArgb: Int?,
+        systemIsDark: Boolean,
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val sizeMap = mapOf(
-                SizeF(110f, 64f) to buildSingleFormatViews(context, WidgetFormat.MINI_2X1, media, config, copy, palette),
-                SizeF(165f, 150f) to buildSingleFormatViews(context, WidgetFormat.SQUARE_2X2, media, config, copy, palette),
-                SizeF(250f, 70f) to buildSingleFormatViews(context, WidgetFormat.CAPSULE_4X1, media, config, copy, palette),
-                SizeF(260f, 150f) to buildSingleFormatViews(context, WidgetFormat.CARD_4X2, media, config, copy, palette),
+        ids.forEach { widgetId ->
+            val instance = snapshot.instances[widgetId] ?: WidgetInstanceConfig(
+                appWidgetId = widgetId,
+                format = defaultFormat,
+                style = snapshot.config.style,
+                seedColorArgb = snapshot.themePrefs.seedColorArgb,
+                schemeVariant = snapshot.themePrefs.schemeVariant,
+                themeMode = snapshot.themePrefs.themeMode,
+                contrastLevel = snapshot.themePrefs.contrastLevel,
+                roleOverrides = snapshot.themePrefs.roleOverrides,
+                cornerRadiusDp = snapshot.config.cornerRadiusDp,
+                containerOpacity = snapshot.config.glassOpacity,
+                showProgressBar = snapshot.config.showProgressBar,
+                showServiceBadge = snapshot.config.showServiceBadge,
+                showCompactHeader = snapshot.config.showCompactHeader,
+                leftCustomAction = snapshot.config.leftCustomAction,
+                rightCustomAction = snapshot.config.rightCustomAction,
             )
-            val responsiveViews = RemoteViews(sizeMap)
-            awm.updateAppWidget(ids, responsiveViews)
-        } else {
-            ids.forEach { widgetId ->
+            val effectiveCfg = instance.toWidgetConfig()
+            val copy = WidgetRenderModel.resolveDisplayCopy(
+                media = media,
+                config = effectiveCfg,
+                lastHistoryTrack = snapshot.lastHistoryTrack,
+                preferredPackage = snapshot.preferredPkg,
+            )
+            val palette = WidgetRenderModel.resolvePaletteForInstance(
+                instance = instance,
+                appTheme = snapshot.themePrefs,
+                dominantArtworkArgb = dominantArtworkArgb,
+                serviceAccentArgb = if (media.hasActiveMedia) media.service.accentColor.hashCode() else null,
+                systemDynamicPrimaryArgb = systemDynamicPrimaryArgb,
+                systemIsDark = systemIsDark,
+            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val sizeMap = mapOf(
+                    SizeF(110f, 64f) to buildSingleFormatViews(context, WidgetFormat.MINI_2X1, media, effectiveCfg, copy, palette),
+                    SizeF(165f, 150f) to buildSingleFormatViews(context, WidgetFormat.SQUARE_2X2, media, effectiveCfg, copy, palette),
+                    SizeF(250f, 70f) to buildSingleFormatViews(context, WidgetFormat.CAPSULE_4X1, media, effectiveCfg, copy, palette),
+                    SizeF(260f, 150f) to buildSingleFormatViews(context, WidgetFormat.CARD_4X2, media, effectiveCfg, copy, palette),
+                )
+                awm.updateAppWidget(widgetId, RemoteViews(sizeMap))
+            } else {
                 val opts = awm.getAppWidgetOptions(widgetId)
                 val minW = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
                 val minH = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
                 val resolvedFmt = WidgetRenderModel.resolveFormatForSizeDp(minW, minH, defaultFormat)
-                val rv = buildSingleFormatViews(context, resolvedFmt, media, config, copy, palette)
+                val rv = buildSingleFormatViews(context, resolvedFmt, media, effectiveCfg, copy, palette)
                 awm.updateAppWidget(widgetId, rv)
             }
         }
@@ -255,23 +316,11 @@ object MagicWidgetUpdater {
         views.setInt(R.id.widget_btn_play_pause, "setColorFilter", palette.playBtnIconArgb)
         views.setInt(R.id.widget_btn_prev, "setColorFilter", palette.titleArgb)
         views.setInt(R.id.widget_btn_next, "setColorFilter", palette.titleArgb)
-        views.setContentDescription(
-            R.id.widget_btn_play_pause,
-            context.getString(R.string.action_play_pause),
-        )
+        views.setContentDescription(R.id.widget_btn_play_pause, context.getString(R.string.action_play_pause))
 
-        views.setOnClickPendingIntent(
-            R.id.widget_btn_play_pause,
-            actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_PLAY_PAUSE, 11),
-        )
-        views.setOnClickPendingIntent(
-            R.id.widget_btn_prev,
-            actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_PREV, 12),
-        )
-        views.setOnClickPendingIntent(
-            R.id.widget_btn_next,
-            actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_NEXT, 13),
-        )
+        views.setOnClickPendingIntent(R.id.widget_btn_play_pause, actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_PLAY_PAUSE, 11))
+        views.setOnClickPendingIntent(R.id.widget_btn_prev, actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_PREV, 12))
+        views.setOnClickPendingIntent(R.id.widget_btn_next, actionPendingIntent(context, MagicWidgetActionReceiver.ACTION_NEXT, 13))
         views.setOnClickPendingIntent(R.id.widget_album_art, openAppPendingIntent(context, 14))
         views.setOnClickPendingIntent(R.id.widget_track_info_container, openAppPendingIntent(context, 15))
         return views
@@ -427,13 +476,16 @@ object MagicWidgetUpdater {
         return views
     }
 
+    /**
+     * Pure Material 3 solid tonal container rendering (no decorative gradients).
+     */
     private fun renderWidgetBackgroundBitmap(
         widthPx: Int,
         heightPx: Int,
         radiusDp: Float,
         palette: WidgetPaletteArgb,
     ): Bitmap {
-        val key = "${widthPx}x${heightPx}_r${radiusDp}_${palette.bgStartArgb}_${palette.bgEndArgb}_${palette.borderArgb}"
+        val key = "${widthPx}x${heightPx}_r${radiusDp}_${palette.bgStartArgb}_${palette.borderArgb}"
         backgroundCache.get(key)?.let { cached ->
             if (!cached.isRecycled) return cached
         }
@@ -442,21 +494,14 @@ object MagicWidgetUpdater {
         val canvas = Canvas(bitmap)
         val rect = RectF(1.5f, 1.5f, widthPx - 1.5f, heightPx - 1.5f)
         val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                0f,
-                0f,
-                widthPx.toFloat(),
-                heightPx.toFloat(),
-                palette.bgStartArgb,
-                palette.bgEndArgb,
-                Shader.TileMode.CLAMP,
-            )
+            style = Paint.Style.FILL
+            color = palette.bgStartArgb
         }
         canvas.drawRoundRect(rect, radiusPx, radiusPx, fillPaint)
 
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 2.5f
+            strokeWidth = 2f
             color = palette.borderArgb
         }
         canvas.drawRoundRect(rect, radiusPx, radiusPx, borderPaint)
@@ -477,7 +522,10 @@ object MagicWidgetUpdater {
             if (!cached.isRecycled) return cached
         }
 
-        val raw = media.albumArt ?: BitmapFactory.decodeResource(context.resources, R.drawable.img_magic_album_art)
+        val raw = media.albumArt ?: (cachedPlaceholderRaw ?: BitmapFactory.decodeResource(
+            context.resources,
+            R.drawable.img_magic_album_art,
+        ).also { cachedPlaceholderRaw = it })
         val scaled = Bitmap.createScaledBitmap(raw, clampedSize, clampedSize, true)
         val output = Bitmap.createBitmap(clampedSize, clampedSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
@@ -503,29 +551,42 @@ object MagicWidgetUpdater {
         return color
     }
 
+    private fun readSystemDynamicPrimary(context: Context): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return runCatching { context.getColor(android.R.color.system_accent1_200) }.getOrNull()
+    }
+
     private fun buildSignatureWithoutProgress(
         media: UnifiedMediaState,
         config: WidgetConfig,
         preferredPkg: String,
+        instancesHash: Int,
+        themeHash: Int,
     ): String {
         return "${media.trackKey}|${media.isPlaying}|${config.style}|${config.cornerRadiusDp}|" +
             "${(config.glassOpacity * 100).toInt()}|${config.showProgressBar}|${config.showServiceBadge}|" +
-            "${config.showCompactHeader}|${config.leftCustomAction}|${config.rightCustomAction}|$preferredPkg"
+            "${config.showCompactHeader}|${config.leftCustomAction}|${config.rightCustomAction}|$preferredPkg|$instancesHash|$themeHash"
     }
 
     private data class WidgetSnapshot(
         val config: WidgetConfig,
+        val themePrefs: ThemePreferences,
+        val instances: Map<Int, WidgetInstanceConfig>,
         val preferredPkg: String,
         val lastHistoryTrack: TrackHistoryEntry?,
     )
 
-    private fun readSnapshot(context: Context): WidgetSnapshot = runBlocking {
+    private suspend fun readSnapshotSuspend(context: Context): WidgetSnapshot {
         val repo = PreferencesRepository(context)
         val cfg = repo.getWidgetConfigSnapshot()
+        val theme = repo.getThemePreferencesSnapshot()
+        val instances = repo.getWidgetInstancesSnapshot()
         val sessionPrefs = repo.getMediaSessionPreferencesSnapshot()
         val stats = repo.localStatsFlow.first()
-        WidgetSnapshot(
+        return WidgetSnapshot(
             config = cfg,
+            themePrefs = theme,
+            instances = instances,
             preferredPkg = sessionPrefs.preferredServicePackage,
             lastHistoryTrack = stats.recentTracks.firstOrNull(),
         )

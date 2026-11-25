@@ -5,28 +5,50 @@ import android.content.Context
 import android.content.Intent
 import com.example.core.media.MediaRepository
 import com.example.data.PreferencesRepository
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MagicWidgetActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val appCtx = context.applicationContext
         MediaRepository.init(appCtx)
+
         when (intent.action) {
-            ACTION_PLAY_PAUSE -> MediaRepository.playPause()
-            ACTION_NEXT -> MediaRepository.next()
-            ACTION_PREV -> MediaRepository.previous()
-            ACTION_OPEN_SOURCE -> MediaRepository.openActiveOrPreferredApp(appCtx)
-            ACTION_CUSTOM_LEFT -> {
-                val cfg = runBlocking { PreferencesRepository(appCtx).getWidgetConfigSnapshot() }
-                MediaRepository.executeCustomAction(cfg.leftCustomAction)
+            ACTION_PLAY_PAUSE -> {
+                MediaRepository.playPause()
+                MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
             }
-            ACTION_CUSTOM_RIGHT -> {
-                val cfg = runBlocking { PreferencesRepository(appCtx).getWidgetConfigSnapshot() }
-                MediaRepository.executeCustomAction(cfg.rightCustomAction)
+            ACTION_NEXT -> {
+                MediaRepository.next()
+                MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
+            }
+            ACTION_PREV -> {
+                MediaRepository.previous()
+                MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
+            }
+            ACTION_OPEN_SOURCE -> {
+                MediaRepository.openActiveOrPreferredApp(appCtx)
+            }
+            ACTION_CUSTOM_LEFT, ACTION_CUSTOM_RIGHT -> {
+                val pending = goAsync()
+                val isLeft = intent.action == ACTION_CUSTOM_LEFT
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val cfg = PreferencesRepository(appCtx).getWidgetConfigSnapshot()
+                        val customAction = if (isLeft) cfg.leftCustomAction else cfg.rightCustomAction
+                        withContext(Dispatchers.Main.immediate) {
+                            MediaRepository.executeCustomAction(customAction)
+                            MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }
             }
         }
-        MagicWidgetUpdater.updateAllWidgets(appCtx, force = true)
     }
 
     companion object {

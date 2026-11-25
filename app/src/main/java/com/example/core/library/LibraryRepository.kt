@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import com.example.data.LibrarySortOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -22,6 +23,15 @@ class LibraryRepository(context: Context) {
     fun observeRecentlyPlayed(limit: Int = 12): Flow<List<LocalTrackEntity>> =
         dao.observeRecentlyPlayedTracks(limit)
 
+    fun observeMostPlayed(limit: Int = 25): Flow<List<LocalTrackEntity>> =
+        dao.observeMostPlayedTracks(limit)
+
+    fun observeRecentlyAdded(limit: Int = 25): Flow<List<LocalTrackEntity>> =
+        dao.observeRecentlyAddedTracks(limit)
+
+    fun observeFavorites(): Flow<List<LocalTrackEntity>> =
+        dao.observeFavoriteTracks()
+
     fun observePlaylists(): Flow<List<PlaylistWithSummary>> = dao.observePlaylists()
 
     fun observePlaylistTracks(playlistId: Long): Flow<List<LocalTrackEntity>> =
@@ -33,9 +43,23 @@ class LibraryRepository(context: Context) {
 
     fun observeFolders(query: String): Flow<List<FolderSummary>> = dao.observeFolders(query)
 
-    fun pagedTracks(query: String): Flow<PagingData<LocalTrackEntity>> = Pager(
-        config = PagingConfig(pageSize = 30, enablePlaceholders = false),
-        pagingSourceFactory = { dao.pagingAllTracks(query) },
+    fun observeBookmarks(trackKey: String): Flow<List<TrackBookmarkEntity>> =
+        dao.observeBookmarksForTrack(trackKey)
+
+    fun observeBookmarkCount(trackKey: String): Flow<Int> =
+        dao.observeBookmarkCount(trackKey)
+
+    fun pagedTracks(query: String, sort: LibrarySortOption = LibrarySortOption.TITLE): Flow<PagingData<LocalTrackEntity>> = Pager(
+        config = PagingConfig(pageSize = 30, initialLoadSize = 40, prefetchDistance = 10, enablePlaceholders = false),
+        pagingSourceFactory = {
+            when (sort) {
+                LibrarySortOption.TITLE -> dao.pagingAllTracks(query)
+                LibrarySortOption.ARTIST -> dao.pagingTracksByArtistSort(query)
+                LibrarySortOption.RECENT -> dao.pagingTracksByRecentSort(query)
+                LibrarySortOption.MOST_PLAYED -> dao.pagingTracksByMostPlayedSort(query)
+                LibrarySortOption.DURATION -> dao.pagingTracksByDurationSort(query)
+            }
+        },
     ).flow
 
     fun pagedTracksByAlbum(albumId: Long): Flow<PagingData<LocalTrackEntity>> = Pager(
@@ -80,6 +104,18 @@ class LibraryRepository(context: Context) {
 
     suspend fun getAllTracksSnapshot(): List<LocalTrackEntity> = withContext(Dispatchers.IO) {
         dao.getAllTracksSnapshot()
+    }
+
+    suspend fun getMostPlayedSnapshot(): List<LocalTrackEntity> = withContext(Dispatchers.IO) {
+        dao.getMostPlayedSnapshot()
+    }
+
+    suspend fun getRecentlyAddedSnapshot(): List<LocalTrackEntity> = withContext(Dispatchers.IO) {
+        dao.getRecentlyAddedSnapshot()
+    }
+
+    suspend fun getFavoritesSnapshot(): List<LocalTrackEntity> = withContext(Dispatchers.IO) {
+        dao.getFavoritesSnapshot()
     }
 
     suspend fun getAlbumTracksSnapshot(albumId: Long): List<LocalTrackEntity> = withContext(Dispatchers.IO) {
@@ -160,6 +196,24 @@ class LibraryRepository(context: Context) {
 
     suspend fun setTrackFavorite(trackId: Long, favorite: Boolean) = withContext(Dispatchers.IO) {
         dao.setTrackFavorite(trackId, favorite)
+    }
+
+    suspend fun updateTrackArtworkStatus(trackId: Long, status: String) = withContext(Dispatchers.IO) {
+        dao.updateArtworkStatus(trackId, status)
+    }
+
+    suspend fun addBookmark(trackKey: String, positionMs: Long, label: String): Long = withContext(Dispatchers.IO) {
+        dao.insertBookmark(
+            TrackBookmarkEntity(
+                trackKey = trackKey,
+                positionMs = positionMs.coerceAtLeast(0L),
+                label = label.trim().ifBlank { "Marca" },
+            ),
+        )
+    }
+
+    suspend fun deleteBookmark(bookmarkId: Long) = withContext(Dispatchers.IO) {
+        dao.deleteBookmark(bookmarkId)
     }
 
     fun buildShareTrackIntent(track: LocalTrackEntity): Intent {

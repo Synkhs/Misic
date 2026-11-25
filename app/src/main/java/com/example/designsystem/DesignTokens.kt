@@ -1,13 +1,16 @@
 package com.example.designsystem
 
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.designsystem.expressive.ArtworkShapeStyle
+import com.example.designsystem.expressive.GeometryPreset
+import com.example.designsystem.expressive.MiniPlayerStyle
+import com.example.designsystem.expressive.NavLabelVisibility
+import com.example.designsystem.expressive.buildShapesForPreset
 
 @Immutable
 data class MagicSpacing(
@@ -24,10 +27,10 @@ data class MagicSpacing(
 data class MagicRadii(
     val extraSmall: Dp = 8.dp,
     val listItem: Dp = 16.dp,
-    val miniPlayer: Dp = 16.dp,
+    val miniPlayer: Dp = 18.dp,
     val medium: Dp = 20.dp,
     val card: Dp = 24.dp,
-    val artworkMedium: Dp = 24.dp,
+    val artworkMedium: Dp = 20.dp,
     val artworkLarge: Dp = 28.dp,
     val sheet: Dp = 28.dp,
 )
@@ -35,9 +38,9 @@ data class MagicRadii(
 @Immutable
 data class MagicElevations(
     val none: Dp = 0.dp,
-    val card: Dp = 2.dp,
-    val miniPlayer: Dp = 6.dp,
-    val sheet: Dp = 12.dp,
+    val card: Dp = 1.dp,
+    val miniPlayer: Dp = 3.dp,
+    val sheet: Dp = 6.dp,
 )
 
 @Immutable
@@ -85,43 +88,57 @@ data class MagicThemeTokens(
     val pureAmoled: Boolean,
     val usesDynamicColor: Boolean,
     val colorFromArtwork: Boolean,
+    val useExpressiveM3: Boolean = true,
+    val hapticFeedbackEnabled: Boolean = true,
+    val geometryPreset: GeometryPreset = GeometryPreset.STANDARD_M3,
+    val artworkShapeStyle: ArtworkShapeStyle = ArtworkShapeStyle.ROUNDED,
+    val navLabelVisibility: NavLabelVisibility = NavLabelVisibility.ALWAYS,
+    val miniPlayerStyle: MiniPlayerStyle = MiniPlayerStyle.CARD,
+    val libraryGridColumns: Int = 2,
+    val lyricsAutoScroll: Boolean = true,
+    val lyricsFontScale: Float = 1f,
     val spacing: MagicSpacing = MagicSpacing(),
     val radii: MagicRadii = MagicRadii(),
     val elevations: MagicElevations = MagicElevations(),
     val motion: MagicMotion = MagicMotion(),
     val semantic: SemanticColors,
-    val backgroundBrush: Brush,
+    val backgroundColor: Color,
     val shapes: Shapes,
 )
 
-fun buildMagicShapes(radii: MagicRadii): Shapes = Shapes(
-    extraSmall = RoundedCornerShape(radii.extraSmall),
-    small = RoundedCornerShape(radii.listItem),
-    medium = RoundedCornerShape(radii.medium),
-    large = RoundedCornerShape(radii.card),
-    extraLarge = RoundedCornerShape(radii.artworkLarge),
+fun radiiForPreset(preset: GeometryPreset): MagicRadii = MagicRadii(
+    extraSmall = 8.dp,
+    listItem = preset.listItemRadiusDp.dp,
+    miniPlayer = (preset.cardRadiusDp - 6).coerceAtLeast(12).dp,
+    medium = preset.artworkMediumDp.dp,
+    card = preset.cardRadiusDp.dp,
+    artworkMedium = preset.artworkMediumDp.dp,
+    artworkLarge = preset.artworkLargeDp.dp,
+    sheet = preset.sheetRadiusDp.dp,
 )
 
 val DefaultMagicThemeTokens: MagicThemeTokens by lazy {
-    val radii = MagicRadii()
+    val preset = GeometryPreset.STANDARD_M3
+    val radii = radiiForPreset(preset)
     MagicThemeTokens(
         theme = AppTheme.Material3Static(),
         isDark = true,
         pureAmoled = false,
         usesDynamicColor = false,
         colorFromArtwork = true,
+        useExpressiveM3 = true,
         radii = radii,
         semantic = buildSemanticColorsForM3(
             colorScheme = VioletDarkColorScheme,
             isDark = true,
             pureAmoled = false,
         ),
-        backgroundBrush = buildBackgroundBrush(
+        backgroundColor = buildFlatBackgroundColor(
             colorScheme = VioletDarkColorScheme,
             isDark = true,
             pureAmoled = false,
         ),
-        shapes = buildMagicShapes(radii),
+        shapes = buildShapesForPreset(preset),
     )
 }
 

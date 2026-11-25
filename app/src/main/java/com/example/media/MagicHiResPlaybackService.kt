@@ -2,13 +2,14 @@ package com.example.media
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -38,6 +39,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.nio.ByteBuffer
+import kotlin.math.roundToInt
 
 data class HiResPlaybackState(
     val isActive: Boolean = false,
@@ -68,6 +71,59 @@ data class HiResPlaybackState(
 }
 
 @OptIn(UnstableApi::class)
+private class StereoBalanceAudioProcessor : BaseAudioProcessor() {
+    @Volatile
+    var balance: Float = 0f // -1.0 (left) .. 0.0 (center) .. +1.0 (right)
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.channelCount != 2) {
+            return AudioProcessor.AudioFormat.NOT_SET
+        }
+        return when (inputAudioFormat.encoding) {
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_FLOAT -> inputAudioFormat
+            else -> AudioProcessor.AudioFormat.NOT_SET
+        }
+    }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val b = balance.coerceIn(-1f, 1f)
+        if (kotlin.math.abs(b) < 0.02f) {
+            val out = replaceOutputBuffer(inputBuffer.remaining())
+            out.put(inputBuffer)
+            out.flip()
+            return
+        }
+        val leftGain = if (b > 0f) (1f - b).coerceIn(0f, 1f) else 1f
+        val rightGain = if (b < 0f) (1f + b).coerceIn(0f, 1f) else 1f
+        val remaining = inputBuffer.remaining()
+        val out = replaceOutputBuffer(remaining)
+
+        when (inputAudioFormat.encoding) {
+            C.ENCODING_PCM_16BIT -> {
+                while (inputBuffer.remaining() >= 4) {
+                    val l = (inputBuffer.short * leftGain).roundToInt()
+                        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                    val r = (inputBuffer.short * rightGain).roundToInt()
+                        .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                    out.putShort(l)
+                    out.putShort(r)
+                }
+            }
+            C.ENCODING_PCM_FLOAT -> {
+                while (inputBuffer.remaining() >= 8) {
+                    val l = (inputBuffer.float * leftGain).coerceIn(-1f, 1f)
+                    val r = (inputBuffer.float * rightGain).coerceIn(-1f, 1f)
+                    out.putFloat(l)
+                    out.putFloat(r)
+                }
+            }
+            else -> out.put(inputBuffer)
+        }
+        out.flip()
+    }
+}
+
+@OptIn(UnstableApi::class)
 class MagicHiResPlaybackService : MediaSessionService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -76,6 +132,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
     private lateinit var prefsRepo: PreferencesRepository
     private lateinit var libraryRepo: LibraryRepository
     private val eqBridge = LocalAudioEqualizerBridge()
+    private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
 
     private var eqConfig = EqualizerConfig()
     private var sleepFadeMultiplier = 1f
@@ -98,6 +155,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(true)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(stereoBalanceProcessor))
                     .build()
             }
         }
@@ -120,17 +178,16 @@ class MagicHiResPlaybackService : MediaSessionService() {
         scope.launch {
             prefsRepo.equalizerConfigFlow.collect { cfg ->
                 eqConfig = cfg
+                stereoBalanceProcessor.balance = if (cfg.enabled) cfg.stereoBalance else 0f
                 eqBridge.attachAndApply(player.audioSessionId, cfg)
                 applyPlayerVolume()
             }
         }
 
-        // Apply pending queue if service was started specifically to play local tracks
         pendingQueueRequest?.let { req ->
             pendingQueueRequest = null
             playQueueInternal(req.tracks, req.startIndex, req.shuffle)
         }
-        startPositionTicker()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -181,14 +238,17 @@ class MagicHiResPlaybackService : MediaSessionService() {
         player.play()
         eqBridge.attachAndApply(player.audioSessionId, eqConfig)
         syncStateSnapshot(loadLyricsIfNew = true)
+        ensurePositionTickerRunning()
     }
 
     private fun togglePlayPauseInternal() {
         if (player.isPlaying) {
             player.pause()
+            stopPositionTicker()
         } else {
             if (player.mediaItemCount > 0) {
                 player.play()
+                ensurePositionTickerRunning()
             }
         }
         syncStateSnapshot()
@@ -223,6 +283,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
             player.seekToDefaultPosition(idx)
             player.play()
             syncStateSnapshot(loadLyricsIfNew = true)
+            ensurePositionTickerRunning()
         }
     }
 
@@ -262,6 +323,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
     }
 
     private fun stopEngineCleanly() {
+        stopPositionTicker()
         player.stop()
         player.clearMediaItems()
         activePlaylist = emptyList()
@@ -292,23 +354,27 @@ class MagicHiResPlaybackService : MediaSessionService() {
         player.volume = (sleepFadeMultiplier * crossfadeFactor).coerceIn(0f, 1f)
     }
 
-    private fun startPositionTicker() {
-        positionJob?.cancel()
+    private fun ensurePositionTickerRunning() {
+        if (positionJob?.isActive == true) return
         positionJob = scope.launch {
-            while (isActive) {
+            while (isActive && player.isPlaying && player.mediaItemCount > 0) {
                 delay(500L)
-                if (_state.value.isActive && player.mediaItemCount > 0) {
-                    applyPlayerVolume()
-                    val pos = player.currentPosition.coerceAtLeast(0L)
-                    val dur = player.duration.coerceAtLeast(_state.value.currentTrack?.durationMs ?: 0L)
-                    _state.value = _state.value.copy(
-                        positionMs = pos,
-                        durationMs = dur,
-                        isPlaying = player.isPlaying,
-                    )
-                }
+                applyPlayerVolume()
+                val pos = player.currentPosition.coerceAtLeast(0L)
+                val dur = player.duration.coerceAtLeast(_state.value.currentTrack?.durationMs ?: 0L)
+                _state.value = _state.value.copy(
+                    positionMs = pos,
+                    durationMs = dur,
+                    isPlaying = player.isPlaying,
+                )
+                MediaRepository.pushLocalPlaybackPosition(pos, dur)
             }
         }
+    }
+
+    private fun stopPositionTicker() {
+        positionJob?.cancel()
+        positionJob = null
     }
 
     private fun syncStateSnapshot(loadLyricsIfNew: Boolean = false) {
@@ -322,13 +388,15 @@ class MagicHiResPlaybackService : MediaSessionService() {
             "FLAC • 24 bit / 48 kHz"
         }
 
+        val pos = player.currentPosition.coerceAtLeast(0L)
+        val dur = player.duration.coerceAtLeast(track?.durationMs ?: 0L)
         _state.value = _state.value.copy(
             isActive = hasItems,
             isPlaying = player.isPlaying,
             playlist = activePlaylist,
             currentIndex = idx,
-            positionMs = player.currentPosition.coerceAtLeast(0L),
-            durationMs = player.duration.coerceAtLeast(track?.durationMs ?: 0L),
+            positionMs = pos,
+            durationMs = dur,
             shuffleEnabled = player.shuffleModeEnabled,
             repeatEnabled = player.repeatMode != Player.REPEAT_MODE_OFF,
             audioSessionId = player.audioSessionId,
@@ -348,10 +416,14 @@ class MagicHiResPlaybackService : MediaSessionService() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) ensurePositionTickerRunning() else stopPositionTicker()
             syncStateSnapshot()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                stopPositionTicker()
+            }
             syncStateSnapshot()
         }
 
@@ -366,7 +438,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        positionJob?.cancel()
+        stopPositionTicker()
         eqBridge.release()
         player.removeListener(playerListener)
         mediaSession?.release()
@@ -428,6 +500,7 @@ class MagicHiResPlaybackService : MediaSessionService() {
         fun toggleRepeat() = activeInstance?.toggleRepeatInternal()
         fun toggleMute() = activeInstance?.toggleMuteInternal()
         fun setSleepFadeMultiplier(multiplier: Float) = activeInstance?.setSleepFadeMultiplierInternal(multiplier)
+        fun currentDspReport() = activeInstance?.eqBridge?.currentCapabilityReport()
         fun stop() = activeInstance?.stopEngineCleanly()
     }
 }

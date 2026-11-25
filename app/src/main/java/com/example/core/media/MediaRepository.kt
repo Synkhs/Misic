@@ -20,7 +20,16 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.LruCache
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.example.core.artwork.LocalArtworkPipeline
+import com.example.core.artwork.LocalArtworkRequest
+import com.example.core.artwork.LocalArtworkSourceKind
+import com.example.core.artwork.SessionArtworkDebugState
+import com.example.core.artwork.SessionArtworkStabilizer
 import com.example.core.compat.AndroidVersionCompat
 import com.example.core.compat.DiscoveredPlayerApp
 import com.example.core.compat.InstalledPlayersScanner
@@ -57,6 +66,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,14 +81,17 @@ object MediaRepository {
     private var libraryRepo: LibraryRepository? = null
     private var mediaSessionManager: MediaSessionManager? = null
     private var activeSessionListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
-    private var progressJob: Job? = null
+    private var tickerObserverJob: Job? = null
+    private var externalRebuildDebounceJob: Job? = null
+    private val artworkRetryJobs = mutableMapOf<String, Job>()
 
     val localEngine = LocalAmbientAudioEngine()
+    private val artworkStabilizer = SessionArtworkStabilizer()
 
     private val externalControllers = mutableListOf<MediaController>()
     private val controllerCallbacks = mutableMapOf<String, MediaController.Callback>()
     private val lastActivityTimestamps = mutableMapOf<String, Long>()
-    private val localArtworkCache = mutableMapOf<Long, Bitmap?>()
+    private val localArtworkCache = LruCache<Long, Bitmap>(24)
     private var manualSelectedPackage: String? = null
     private var currentSessionPrefs = MediaSessionPreferences()
     private var listenerConnectedFlag = false
@@ -87,6 +100,8 @@ object MediaRepository {
     private var accumulatedPlaySeconds: Int = 0
     private var preFadeExternalStreamVolume: Int? = null
     private var lastDetectedOutputCategory: AudioOutputCategory? = null
+
+    private val _isAnyPlaybackActive = MutableStateFlow(false)
 
     private val sleepTimerManager = SleepTimerManager(
         scope = scope,
@@ -100,6 +115,13 @@ object MediaRepository {
 
     private val _mediaState = MutableStateFlow(UnifiedMediaState())
     val mediaState: StateFlow<UnifiedMediaState> = _mediaState.asStateFlow()
+
+    // Isolated position stream (positionMs, durationMs) so high-frequency ticks never force whole-screen recomposition
+    private val _playbackProgressFlow = MutableStateFlow(0L to 0L)
+    val playbackProgressFlow: StateFlow<Pair<Long, Long>> = _playbackProgressFlow.asStateFlow()
+
+    private val _sessionArtworkDebug = MutableStateFlow(SessionArtworkDebugState())
+    val sessionArtworkDebug: StateFlow<SessionArtworkDebugState> = _sessionArtworkDebug.asStateFlow()
 
     private val _hasListenerPermission = MutableStateFlow(false)
     val hasListenerPermission: StateFlow<Boolean> = _hasListenerPermission.asStateFlow()
@@ -138,13 +160,20 @@ object MediaRepository {
         appContext = ctx
         val repo = PreferencesRepository(ctx)
         prefsRepo = repo
-        libraryRepo = LibraryRepository(ctx)
+        val libRepo = LibraryRepository(ctx)
+        libraryRepo = libRepo
         mediaSessionManager = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
 
         scope.launch {
             localEngine.state.collect { localState ->
                 if ((localState.isActive || externalControllers.isEmpty()) && !MagicHiResPlaybackService.state.value.isActive) {
-                    rebuildState()
+                    pushLocalPlaybackPosition(localState.positionMs, localState.currentTrack.durationMs)
+                    if (localState.trackIndex != _mediaState.value.queue.indexOfFirst { it.isCurrent } ||
+                        localState.isPlaying != _mediaState.value.isPlaying ||
+                        localState.isActive != _mediaState.value.isLocalEngine
+                    ) {
+                        rebuildState()
+                    }
                 }
             }
         }
@@ -152,18 +181,21 @@ object MediaRepository {
         scope.launch {
             MagicHiResPlaybackService.state.collect { hiResState ->
                 hiResState.currentTrack?.let { track ->
-                    if (!localArtworkCache.containsKey(track.albumId)) {
-                        localArtworkCache[track.albumId] = loadLocalAlbumArtBitmap(ctx, track.albumArtUri)
+                    if (localArtworkCache.get(track.albumId) == null) {
+                        scope.launch(Dispatchers.IO) {
+                            val bmp = loadLocalHiResBitmap(ctx, track)
+                            if (bmp != null) {
+                                localArtworkCache.put(track.albumId, bmp)
+                                withContext(Dispatchers.Main.immediate) { rebuildState() }
+                            }
+                        }
                     }
                 }
                 if (hiResState.isActive) {
-                    if (localEngine.state.value.isActive) {
-                        localEngine.stop()
-                    }
-                    if (_bridgeActive.value) {
-                        MagicMediaBridgeService.stop(ctx)
-                    }
+                    if (localEngine.state.value.isActive) localEngine.stop()
+                    if (_bridgeActive.value) MagicMediaBridgeService.stop(ctx)
                 }
+                pushLocalPlaybackPosition(hiResState.positionMs, hiResState.durationMs)
                 rebuildState()
             }
         }
@@ -206,7 +238,11 @@ object MediaRepository {
 
         refreshPermissionsAndServices()
         refreshAudioOutputs()
-        startProgressTicker()
+        observePlaybackForZeroIdleTicker()
+    }
+
+    fun pushLocalPlaybackPosition(posMs: Long, durationMs: Long) {
+        _playbackProgressFlow.value = posMs.coerceAtLeast(0L) to durationMs.coerceAtLeast(0L)
     }
 
     fun isHiResServiceOwningNotification(): Boolean =
@@ -325,14 +361,37 @@ object MediaRepository {
         rebuildState()
     }
 
-    private suspend fun loadLocalAlbumArtBitmap(ctx: Context, artUri: String): Bitmap? = withContext(Dispatchers.IO) {
-        if (artUri.isBlank()) return@withContext null
-        runCatching {
-            ctx.contentResolver.openInputStream(Uri.parse(artUri))?.use { stream ->
-                BitmapFactory.decodeStream(stream)
-            }
-        }.getOrNull()
+    private suspend fun loadLocalHiResBitmap(ctx: Context, track: LocalTrackEntity): Bitmap? = withContext(Dispatchers.IO) {
+        val req = LocalArtworkRequest(
+            trackId = track.id,
+            albumId = track.albumId,
+            contentUri = track.contentUri,
+            albumArtUri = track.albumArtUri,
+            filePath = track.folderPath,
+            dateModifiedSec = track.dateModified / 1000L,
+            targetSizePx = 512,
+        )
+        val (bytes, source) = LocalArtworkPipeline.resolveAndCacheBytes(ctx, req)
+        val newStatus = if (bytes != null && source != LocalArtworkSourceKind.NONE) "LOADED" else "MISSING"
+        if (track.artworkStatus != newStatus) {
+            runCatching { libraryRepo?.updateTrackArtworkStatus(track.id, newStatus) }
+        }
+        if (bytes != null && bytes.isNotEmpty()) {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } else {
+            null
+        }
     }
+
+    fun clearArtworkCaches(ctx: Context? = appContext) {
+        localArtworkCache.evictAll()
+        artworkStabilizer.clear()
+        _sessionArtworkDebug.value = artworkStabilizer.currentDebugState()
+        ctx?.let { LocalArtworkPipeline.clearCache(it) }
+    }
+
+    fun currentDspCapabilityReport(): DspCapabilityReport =
+        MagicHiResPlaybackService.currentDspReport() ?: localEngine.currentDspReport()
 
     private fun isNotificationListenerEnabled(ctx: Context): Boolean {
         val flat = Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners")
@@ -394,16 +453,16 @@ object MediaRepository {
             val cb = object : MediaController.Callback() {
                 override fun onPlaybackStateChanged(state: PlaybackState?) {
                     lastActivityTimestamps[controller.packageName] = System.currentTimeMillis()
-                    rebuildState()
+                    scheduleDebouncedRebuild()
                 }
 
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     lastActivityTimestamps[controller.packageName] = System.currentTimeMillis()
-                    rebuildState()
+                    scheduleDebouncedRebuild()
                 }
 
                 override fun onQueueChanged(queue: MutableList<android.media.session.MediaSession.QueueItem>?) {
-                    rebuildState()
+                    scheduleDebouncedRebuild()
                 }
 
                 override fun onSessionDestroyed() {
@@ -416,6 +475,14 @@ object MediaRepository {
 
         refreshDiscoveredPlayers(ctx)
         rebuildState()
+    }
+
+    private fun scheduleDebouncedRebuild() {
+        externalRebuildDebounceJob?.cancel()
+        externalRebuildDebounceJob = scope.launch {
+            delay(180L)
+            rebuildState()
+        }
     }
 
     private fun refreshDiscoveredPlayers(ctx: Context) {
@@ -463,7 +530,7 @@ object MediaRepository {
                     lastPositionUpdateElapsedMs = SystemClock.elapsedRealtime(),
                     playbackSpeed = if (hiRes.isPlaying) 1.0f else 0.0f,
                     durationMs = hiRes.durationMs.coerceAtLeast(track.durationMs),
-                    albumArt = localArtworkCache[track.albumId],
+                    albumArt = localArtworkCache.get(track.albumId),
                     albumArtUri = track.albumArtUri,
                     capabilities = PlaybackCapabilities(
                         canPlayPause = true,
@@ -483,6 +550,7 @@ object MediaRepository {
                     isRepeatEnabled = hiRes.repeatEnabled,
                     queue = hiRes.toQueueItems(),
                     lyrics = hiRes.currentLyrics,
+                    localTrackId = track.id,
                 ),
             )
         } else if (local.isActive) {
@@ -534,11 +602,31 @@ object MediaRepository {
             val pb = ctrl.playbackState
             val svc = MusicServiceApp.fromPackageName(pkg)
             val realLabel = resolveAppLabel(pm, pkg, svc.displayName)
-            val art: Bitmap? = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: realLabel
+            val artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                ?: meta?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                ?: "Reproduciendo en $realLabel"
+            val album = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: realLabel
+
+            val rawArt: Bitmap? = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-            val artUri = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            val rawUri = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
                 ?: meta?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+                ?: meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+
+            val trackKey = "${pkg}|${title.trim().lowercase()}|${artist.trim().lowercase()}|${album.trim().lowercase()}"
+            val stabilized = artworkStabilizer.resolve(
+                trackKey = trackKey,
+                incomingBitmap = rawArt,
+                incomingUri = rawUri,
+            )
+            _sessionArtworkDebug.value = artworkStabilizer.currentDebugState()
+
+            if (stabilized.bitmap == null && !stabilized.artUri.isNullOrBlank()) {
+                scheduleUriArtworkRetry(ctx, trackKey, stabilized.artUri)
+            }
+
             val isPlaying = pb?.state == PlaybackState.STATE_PLAYING
             val caps = PlaybackCapabilities.fromPlaybackState(pb)
 
@@ -567,19 +655,17 @@ object MediaRepository {
                     packageName = pkg,
                     appName = realLabel,
                     service = svc,
-                    title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: realLabel,
-                    artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST)
-                        ?: meta?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
-                        ?: "Reproduciendo en $realLabel",
-                    album = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: realLabel,
+                    title = title,
+                    artist = artist,
+                    album = album,
                     isPlaying = isPlaying,
                     playbackStateCode = pb?.state ?: PlaybackState.STATE_NONE,
                     positionMs = (pb?.position ?: 0L).coerceAtLeast(0L),
                     lastPositionUpdateElapsedMs = pb?.lastPositionUpdateTime ?: 0L,
                     playbackSpeed = pb?.playbackSpeed ?: if (isPlaying) 1.0f else 0.0f,
                     durationMs = (meta?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L).coerceAtLeast(0L),
-                    albumArt = art,
-                    albumArtUri = artUri,
+                    albumArt = stabilized.bitmap,
+                    albumArtUri = stabilized.artUri,
                     capabilities = caps,
                     isLocalEngine = false,
                     isSelected = false,
@@ -631,8 +717,9 @@ object MediaRepository {
         _playerState.value = newPlayerState
         val unified = newPlayerState.toUnifiedMediaState()
         _mediaState.value = unified
+        _playbackProgressFlow.value = unified.positionMs to unified.durationMs
+        _isAnyPlaybackActive.value = unified.isPlaying
 
-        // Record history & check end-of-track sleep timer
         if (unified.hasActiveMedia && unified.isPlaying) {
             val key = unified.trackKey
             if (key != lastRecordedTrackKey && unified.title.isNotBlank()) {
@@ -661,6 +748,37 @@ object MediaRepository {
         MagicTileSync.requestTileUpdates(ctx)
         if (_bridgeActive.value && !isHiResServiceOwningNotification()) {
             MagicMediaBridgeService.syncNotification(ctx)
+        }
+    }
+
+    private fun scheduleUriArtworkRetry(ctx: Context, trackKey: String, artUri: String) {
+        if (artworkRetryJobs[trackKey]?.isActive == true) return
+        artworkRetryJobs[trackKey] = scope.launch(Dispatchers.IO) {
+            val backoffs = listOf(220L, 600L, 1400L)
+            val imageLoader = LocalArtworkPipeline.getOrCreateImageLoader(ctx)
+            for ((attemptIdx, delayMs) in backoffs.withIndex()) {
+                delay(delayMs)
+                val req = ImageRequest.Builder(ctx)
+                    .data(artUri)
+                    .size(512)
+                    .allowHardware(false)
+                    .build()
+                val res = runCatching { imageLoader.execute(req) }.getOrNull()
+                val bmp = (res as? SuccessResult)?.drawable?.toBitmap()
+                if (bmp != null && bmp.width > 32 && bmp.height > 32) {
+                    artworkStabilizer.resolve(
+                        trackKey = trackKey,
+                        incomingBitmap = bmp,
+                        incomingUri = artUri,
+                        uriRetryCount = attemptIdx + 1,
+                    )
+                    withContext(Dispatchers.Main.immediate) {
+                        rebuildState()
+                    }
+                    break
+                }
+            }
+            artworkRetryJobs.remove(trackKey)
         }
     }
 
@@ -802,7 +920,7 @@ object MediaRepository {
             rebuildState()
             return
         }
-        val currentPos = _playerState.value.interpolatedPositionMs
+        val currentPos = _playbackProgressFlow.value.first.coerceAtLeast(_playerState.value.interpolatedPositionMs)
         seekTo((currentPos + deltaMs).coerceAtLeast(0L))
     }
 
@@ -898,6 +1016,18 @@ object MediaRepository {
                 MagicHiResPlaybackService.moveQueueItem(fromIndex, toIndex)
             } else {
                 localEngine.moveQueueItem(fromIndex, toIndex)
+            }
+            rebuildState()
+        }
+    }
+
+    fun clearLocalQueue() {
+        if (_playerState.value.activeSession?.isLocalEngine == true) {
+            if (MagicHiResPlaybackService.state.value.isActive) {
+                MagicHiResPlaybackService.stop()
+            }
+            if (localEngine.state.value.isActive) {
+                localEngine.stop()
             }
             rebuildState()
         }
@@ -1110,41 +1240,44 @@ object MediaRepository {
         _playerState.value = _playerState.value.copy(lastError = message)
     }
 
-    private fun startProgressTicker() {
-        progressJob?.cancel()
-        progressJob = scope.launch {
-            while (isActive) {
-                delay(1000L)
-                val ctx = appContext ?: continue
-                val current = _playerState.value
-                val active = current.activeSession ?: continue
+    /**
+     * Zero-idle background ticker: suspends completely on _isAnyPlaybackActive=false so CPU usage
+     * drops to 0% whenever music is paused or stopped.
+     */
+    private fun observePlaybackForZeroIdleTicker() {
+        tickerObserverJob?.cancel()
+        tickerObserverJob = scope.launch {
+            _isAnyPlaybackActive.collectLatest { isPlaying ->
+                if (!isPlaying) return@collectLatest
+                while (isActive) {
+                    delay(1_000L)
+                    val ctx = appContext ?: continue
+                    val current = _playerState.value
+                    val active = current.activeSession ?: continue
+                    if (!active.isPlaying) continue
 
-                if (active.isPlaying) {
                     accumulatedPlaySeconds++
                     if (accumulatedPlaySeconds >= 10) {
                         val delta = accumulatedPlaySeconds
                         accumulatedPlaySeconds = 0
                         prefsRepo?.addListeningSeconds(delta)
                     }
-                }
 
-                if (!active.isPlaying || active.isLocalEngine) continue
-                val interpolated = active.computeInterpolatedPosition()
-                val updated = current.copy(interpolatedPositionMs = interpolated)
-                _playerState.value = updated
-                val unified = updated.toUnifiedMediaState()
-                _mediaState.value = unified
+                    if (!active.isLocalEngine) {
+                        val interpolated = active.computeInterpolatedPosition()
+                        _playbackProgressFlow.value = interpolated to active.durationMs
+                        val trackKey = _mediaState.value.trackKey
+                        sleepTimerManager.onTrackProgressOrChange(
+                            currentTrackKey = trackKey,
+                            positionMs = interpolated,
+                            durationMs = active.durationMs,
+                            isPlaying = true,
+                        )
+                    }
 
-                sleepTimerManager.onTrackProgressOrChange(
-                    currentTrackKey = unified.trackKey,
-                    positionMs = unified.positionMs,
-                    durationMs = unified.durationMs,
-                    isPlaying = unified.isPlaying,
-                )
-
-                // Only refresh widgets during active playback when the screen is awake
-                if (AndroidVersionCompat.isInteractiveScreenOn(ctx)) {
-                    MagicWidgetUpdater.updateAllWidgets(ctx)
+                    if (accumulatedPlaySeconds % 3 == 0 && AndroidVersionCompat.isInteractiveScreenOn(ctx)) {
+                        MagicWidgetUpdater.updateAllWidgets(ctx)
+                    }
                 }
             }
         }

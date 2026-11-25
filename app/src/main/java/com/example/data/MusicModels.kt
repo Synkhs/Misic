@@ -4,76 +4,108 @@ import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import com.example.designsystem.ColorRoleOverrides
+import com.example.designsystem.ContrastPreset
+import com.example.designsystem.DEFAULT_VIOLET_SEED_ARGB
+import com.example.designsystem.McuSchemeVariant
+import com.example.designsystem.ThemeMode
 
 enum class MusicServiceApp(
     val id: String,
     val displayName: String,
-    val packageName: String,
-    val accentColor: Color,
     val subtitle: String,
+    val packageName: String,
+    val knownPackages: List<String>,
+    val accentColor: Color,
+    val storeUrl: String = "",
 ) {
     SPOTIFY(
         id = "spotify",
         displayName = "Spotify",
+        subtitle = "Streaming y biblioteca oficial",
         packageName = "com.spotify.music",
+        knownPackages = listOf("com.spotify.music", "com.spotify.lite"),
         accentColor = Color(0xFF1DB954),
-        subtitle = "Streaming y listas",
+        storeUrl = "https://play.google.com/store/apps/details?id=com.spotify.music",
     ),
     YOUTUBE_MUSIC(
-        id = "yt_music",
+        id = "youtube_music",
         displayName = "YouTube Music",
+        subtitle = "Streaming de YouTube Music y listas",
         packageName = "com.google.android.apps.youtube.music",
+        knownPackages = listOf("com.google.android.apps.youtube.music"),
         accentColor = Color(0xFFFF3D57),
-        subtitle = "Catálogo YouTube y radios",
+        storeUrl = "https://play.google.com/store/apps/details?id=com.google.android.apps.youtube.music",
     ),
     AMAZON_MUSIC(
         id = "amazon_music",
         displayName = "Amazon Music",
+        subtitle = "Control universal MediaSession",
         packageName = "com.amazon.mp3",
-        accentColor = Color(0xFF00A8E1),
-        subtitle = "Ultra HD y Audio Espacial",
+        knownPackages = listOf("com.amazon.mp3"),
+        accentColor = Color(0xFF25D1DA),
+        storeUrl = "https://play.google.com/store/apps/details?id=com.amazon.mp3",
     ),
     APPLE_MUSIC(
         id = "apple_music",
         displayName = "Apple Music",
+        subtitle = "Control multimedia en Android",
         packageName = "com.apple.android.music",
-        accentColor = Color(0xFFFA243C),
-        subtitle = "Lossless y Dolby Atmos",
-    ),
-    DEEZER(
-        id = "deezer",
-        displayName = "Deezer",
-        packageName = "deezer.android.app",
-        accentColor = Color(0xFFA238FF),
-        subtitle = "HiFi FLAC Streaming",
+        knownPackages = listOf("com.apple.android.music"),
+        accentColor = Color(0xFFFA4A66),
+        storeUrl = "https://play.google.com/store/apps/details?id=com.apple.android.music",
     ),
     TIDAL(
         id = "tidal",
         displayName = "TIDAL",
+        subtitle = "Audio sin pérdida y MediaSession",
         packageName = "com.aspiro.tidal",
-        accentColor = Color(0xFF00E5FF),
-        subtitle = "Max FLAC 24-bit",
+        knownPackages = listOf("com.aspiro.tidal"),
+        accentColor = Color(0xFF00D7D7),
+        storeUrl = "https://play.google.com/store/apps/details?id=com.aspiro.tidal",
+    ),
+    DEEZER(
+        id = "deezer",
+        displayName = "Deezer",
+        subtitle = "Streaming de alta fidelidad",
+        packageName = "deezer.android.app",
+        knownPackages = listOf("deezer.android.app"),
+        accentColor = Color(0xFFA238FF),
+        storeUrl = "https://play.google.com/store/apps/details?id=deezer.android.app",
     ),
     SOUNDCLOUD(
         id = "soundcloud",
         displayName = "SoundCloud",
+        subtitle = "Pistas independientes y sesiones",
         packageName = "com.soundcloud.android",
-        accentColor = Color(0xFFFF5500),
-        subtitle = "Audio independiente",
+        knownPackages = listOf("com.soundcloud.android"),
+        accentColor = Color(0xFFFF6A00),
+        storeUrl = "https://play.google.com/store/apps/details?id=com.soundcloud.android",
+    ),
+    YOUTUBE(
+        id = "youtube",
+        displayName = "YouTube",
+        subtitle = "Sesión multimedia de vídeo",
+        packageName = "com.google.android.youtube",
+        knownPackages = listOf("com.google.android.youtube"),
+        accentColor = Color(0xFFFF4444),
+        storeUrl = "https://play.google.com/store/apps/details?id=com.google.android.youtube",
     ),
     LOCAL_ENGINE(
         id = "local_engine",
         displayName = "Motor Local Hi-Res",
-        packageName = "com.aistudio.magicmusic.hnm10x",
-        accentColor = Color(0xFFB38CFF),
-        subtitle = "Reproductor local integrado",
+        subtitle = "Motor nativo Media3 ExoPlayer de MagicMusic",
+        packageName = "com.example",
+        knownPackages = listOf("com.example", "com.aistudio.magicmusic.hnm10x"),
+        accentColor = Color(0xFFC0C1FF),
     ),
     OTHER(
         id = "other",
-        displayName = "Reproductor Activo",
+        displayName = "Reproductor del sistema",
+        subtitle = "Control MediaSession compatible",
         packageName = "",
-        accentColor = Color(0xFFCDA9FF),
-        subtitle = "Cualquier sesión MediaSession",
+        knownPackages = emptyList(),
+        accentColor = Color(0xFF9EA6FF),
     );
 
     companion object {
@@ -82,34 +114,24 @@ enum class MusicServiceApp(
             YOUTUBE_MUSIC,
             AMAZON_MUSIC,
             APPLE_MUSIC,
-            DEEZER,
             TIDAL,
+            DEEZER,
             SOUNDCLOUD,
         )
 
         fun fromPackageName(pkg: String?): MusicServiceApp {
             if (pkg.isNullOrBlank()) return OTHER
-            return entries.firstOrNull { it.packageName == pkg } ?: when {
-                pkg.contains("spotify", ignoreCase = true) -> SPOTIFY
-                pkg.contains("youtube.music", ignoreCase = true) -> YOUTUBE_MUSIC
-                pkg.contains("amazon", ignoreCase = true) -> AMAZON_MUSIC
-                pkg.contains("apple", ignoreCase = true) -> APPLE_MUSIC
-                pkg.contains("deezer", ignoreCase = true) -> DEEZER
-                pkg.contains("tidal", ignoreCase = true) -> TIDAL
-                pkg.contains("soundcloud", ignoreCase = true) -> SOUNDCLOUD
-                else -> OTHER
-            }
+            return entries.firstOrNull { app ->
+                app.knownPackages.any { it.equals(pkg, ignoreCase = true) } ||
+                    app.packageName.equals(pkg, ignoreCase = true)
+            } ?: OTHER
+        }
+
+        fun fromId(id: String?): MusicServiceApp {
+            if (id.isNullOrBlank()) return OTHER
+            return entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: OTHER
         }
     }
-}
-
-enum class SessionPriorityRule(
-    val label: String,
-    val description: String,
-) {
-    PLAYING_FIRST("Reproduciendo primero", "Prioriza la app que está sonando actualmente"),
-    LAST_ACTIVE("Última activa", "Mantiene la última sesión con actividad reciente"),
-    PINNED_PREFERRED("App preferida", "Prioriza tu servicio fijado cuando esté abierto"),
 }
 
 enum class WidgetFormat(
@@ -117,86 +139,119 @@ enum class WidgetFormat(
     val gridLabel: String,
     val description: String,
 ) {
-    CARD_4X2("Tarjeta Control", "4×2", "Carátula, insignia, barra de progreso y 5 controles"),
-    CAPSULE_4X1("Cápsula", "4×1", "Barra horizontal compacta con carátula y controles base"),
-    SQUARE_2X2("Cuadrado", "2×2", "Carátula prominente con barra de progreso y pausa"),
-    MINI_2X1("Mini", "2×1", "Diseño mínimo adaptable 2×1 o 1×1 con pausa rápida"),
+    CARD_4X2("Tarjeta Completa", "4×2", "Carátula grande, controles configurables y barra de progreso"),
+    CAPSULE_4X1("Cápsula Compacta", "4×1", "Cabecera horizontal compacta con reproducción instantánea"),
+    SQUARE_2X2("Cuadrado Portada", "2×2", "Portada protagonista con título y botón play/pausa"),
+    MINI_2X1("Mini Rápido", "2×1 / 1×1", "Botón compacto adaptable para huecos pequeños"),
 }
 
 enum class WidgetStyle(
     val title: String,
     val subtitle: String,
 ) {
-    TONAL("Tonal", "Colores tonales del tema Material 3"),
-    SURFACE("Superficie", "Contenedor oscuro neutro con contraste nítido"),
-    ARTWORK("Carátula", "Colores extraídos dinámicamente de la pista"),
-    TRANSPARENT("Transparente", "Superficie translúcida que deja ver tu fondo"),
+    SURFACE("Superficie Material 3", "Contenedor tonal sólido surfaceContainerHigh"),
+    TONAL("Tonal Vibrante", "Acentos primaryContainer del color semilla o dinámico"),
+    ARTWORK("Carátula Adaptable", "Colores extraídos del álbum con texto de alto contraste"),
+    TRANSPARENT("Contorno Ligero", "Contenedor translúcido limpio sin gradientes"),
+}
+
+enum class WidgetColorSource(val label: String) {
+    FOLLOW_APP("Seguir color de la app"),
+    SYSTEM_DYNAMIC("Color del sistema (Material You)"),
+    ARTWORK("Tono de la carátula"),
+    CUSTOM_SEED("Color personalizado del widget"),
 }
 
 enum class CustomControlAction(
     val label: String,
     val shortLabel: String,
 ) {
-    REWIND_15("Retroceder 15 s", "-15 s"),
-    FORWARD_15("Avanzar 15 s", "+15 s"),
-    SWITCH_SOURCE("Cambiar app", "Fuente"),
-    OPEN_PLAYER("Abrir reproductor", "Abrir"),
-    MUTE_AUDIO("Silenciar", "Silencio"),
+    REWIND_15("Retroceder 15s", "−15 s"),
+    FORWARD_15("Avanzar 15s", "+15 s"),
+    SWITCH_SOURCE("Cambiar reproductor", "Cambiar app"),
+    OPEN_PLAYER("Abrir reproductor", "Abrir app"),
+    MUTE_AUDIO("Silenciar audio", "Silenciar"),
     LIKE_TRACK("Me gusta", "Me gusta"),
     SHUFFLE("Aleatorio", "Aleatorio"),
     REPEAT("Repetir", "Repetir"),
 }
 
-enum class QsTileMode(
-    val label: String,
-    val description: String,
-) {
-    PLAY_PAUSE("Reproducir / Pausar", "Alterna la reproducción del servicio activo"),
-    OPEN_DECK("Panel Pantalla Bloqueo", "Abre controles completos sobre el bloqueo"),
-    SWITCH_SOURCE("Rotar Servicio", "Cambia entre sesiones activas disponibles"),
-}
-
-enum class LockPrivacyLevel(
-    val label: String,
-    val description: String,
-) {
-    PUBLIC("Pública", "Muestra carátula, título, artista y controles sobre el bloqueo"),
-    HIDE_SENSITIVE("Privada (ocultar título y carátula)", "Oculta portada e información de la pista mientras el móvil está bloqueado"),
-    SECRET("Secreta (no mostrar en bloqueo)", "Mantiene el reproductor oculto en la pantalla de bloqueo"),
-}
-
-enum class QuickTileType(
-    val key: String,
-    val label: String,
-    val supportsToggle: Boolean,
-) {
-    PLAY_PAUSE("play_pause", "Música", true),
-    NEXT("next", "Siguiente", false),
-    PREVIOUS("previous", "Anterior", false),
-    SHUFFLE("shuffle", "Aleatorio", true),
-    REPEAT("repeat", "Repetir", true),
-    FAVORITE("favorite", "Me gusta", true),
-    SLEEP_TIMER("sleep_timer", "Temporizador", true),
-}
-
-enum class AudioOutputCategory(
-    val label: String,
-) {
-    SPEAKER("Altavoz"),
-    WIRED_HEADSET("Cable"),
-    BLUETOOTH("Bluetooth"),
-    USB_DAC("USB DAC"),
-}
+@Immutable
+data class ActiveSessionInfo(
+    val packageName: String,
+    val service: MusicServiceApp,
+    val title: String,
+    val artist: String,
+    val album: String = "",
+    val isPlaying: Boolean,
+    val isSelected: Boolean,
+    val appLabel: String = service.displayName,
+    val isLocalEngine: Boolean = false,
+)
 
 @Immutable
-data class DeviceEqProfile(
-    val category: AudioOutputCategory = AudioOutputCategory.SPEAKER,
-    val enabled: Boolean = true,
-    val presetIndex: Int = 0,
-    val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f),
-    val bassBoostStrength: Int = 0,
-    val loudnessGainMb: Int = 0,
+data class LyricsLine(
+    val timestampMs: Long,
+    val text: String,
 )
+
+@Immutable
+data class LyricsData(
+    val lines: List<LyricsLine>,
+    val isSynced: Boolean = true,
+    val sourceNote: String = "",
+    val trackKey: String = "",
+)
+
+@Immutable
+data class QueueTrackItem(
+    val queueId: Long,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val isCurrent: Boolean,
+)
+
+@Immutable
+data class UnifiedMediaState(
+    val title: String = "Sin reproducción activa",
+    val artist: String = "Toca para abrir o inicia el Motor Local",
+    val album: String = "MagicMusic",
+    val packageName: String = "",
+    val service: MusicServiceApp = MusicServiceApp.LOCAL_ENGINE,
+    val isPlaying: Boolean = false,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val albumArt: Bitmap? = null,
+    val albumArtUri: String? = null,
+    val isLocalEngine: Boolean = false,
+    val activeSessions: List<ActiveSessionInfo> = emptyList(),
+    val lastUpdatedMs: Long = System.currentTimeMillis(),
+    val canPlayPause: Boolean = true,
+    val canSkipNext: Boolean = true,
+    val canSkipPrevious: Boolean = true,
+    val canSeek: Boolean = true,
+    val canFavorite: Boolean = false,
+    val isFavorite: Boolean = false,
+    val canShuffle: Boolean = false,
+    val isShuffleEnabled: Boolean = false,
+    val canRepeat: Boolean = false,
+    val isRepeatEnabled: Boolean = false,
+    val isMuted: Boolean = false,
+    val streamFormatBadge: String = "Hi-Res Local",
+    val queue: List<QueueTrackItem> = emptyList(),
+    val lyrics: LyricsData? = null,
+    val localTrackId: Long? = null,
+) {
+    val hasActiveMedia: Boolean
+        get() = activeSessions.isNotEmpty() || isLocalEngine || (title.isNotBlank() && title != "Sin reproducción activa")
+
+    val trackKey: String
+        get() = "${packageName}|${title.trim().lowercase()}|${artist.trim().lowercase()}|${album.trim().lowercase()}"
+
+    val progressFraction: Float
+        get() = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+}
 
 @Immutable
 data class WidgetConfig(
@@ -211,12 +266,93 @@ data class WidgetConfig(
 )
 
 @Immutable
+data class WidgetInstanceConfig(
+    val appWidgetId: Int,
+    val format: WidgetFormat = WidgetFormat.CARD_4X2,
+    val style: WidgetStyle = WidgetStyle.SURFACE,
+    val colorSource: WidgetColorSource = WidgetColorSource.FOLLOW_APP,
+    val seedColorArgb: Long = DEFAULT_VIOLET_SEED_ARGB,
+    val schemeVariant: McuSchemeVariant = McuSchemeVariant.TONAL_SPOT,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val contrastLevel: ContrastPreset = ContrastPreset.STANDARD,
+    val roleOverrides: ColorRoleOverrides = ColorRoleOverrides(),
+    val cornerRadiusDp: Int = 24,
+    val containerOpacity: Float = 0.94f,
+    val showProgressBar: Boolean = true,
+    val showServiceBadge: Boolean = true,
+    val showCompactHeader: Boolean = true,
+    val leftCustomAction: CustomControlAction = CustomControlAction.REWIND_15,
+    val rightCustomAction: CustomControlAction = CustomControlAction.FORWARD_15,
+) {
+    fun toWidgetConfig(): WidgetConfig = WidgetConfig(
+        style = style,
+        cornerRadiusDp = cornerRadiusDp,
+        glassOpacity = containerOpacity,
+        showProgressBar = showProgressBar,
+        showServiceBadge = showServiceBadge,
+        showCompactHeader = showCompactHeader,
+        leftCustomAction = leftCustomAction,
+        rightCustomAction = rightCustomAction,
+    )
+}
+
+@Immutable
 data class WidgetTemplate(
     val id: String,
     val name: String,
-    val format: WidgetFormat = WidgetFormat.CARD_4X2,
-    val config: WidgetConfig = WidgetConfig(),
+    val format: WidgetFormat,
+    val config: WidgetConfig,
+    val createdAtMs: Long = System.currentTimeMillis(),
 )
+
+enum class SessionPriorityRule(
+    val label: String,
+    val description: String,
+) {
+    PLAYING_FIRST("Última en reproducción", "Prioriza la app que está sonando activamente"),
+    LAST_ACTIVE("Más reciente", "Prioriza la sesión multimedia con interacción más reciente"),
+    PINNED_PREFERRED("App preferida fijada", "Da prioridad a tu reproductor favorito cuando esté abierto"),
+}
+
+@Immutable
+data class MediaSessionPreferences(
+    val priorityRule: SessionPriorityRule = SessionPriorityRule.PLAYING_FIRST,
+    val ignoreVideoSessions: Boolean = false,
+    val preferredServicePackage: String = MusicServiceApp.SPOTIFY.packageName,
+    val disabledPackages: Set<String> = emptySet(),
+)
+
+enum class QsTileMode(
+    val label: String,
+    val description: String,
+) {
+    PLAY_PAUSE("Reproducir / Pausar", "Alterna reproducción de la sesión activa"),
+    SWITCH_SOURCE("Cambiar reproductor", "Abre selector de sesión activa o rota fuente"),
+    OPEN_DECK("Abrir panel bloqueado", "Abre el deck de control en pantalla completa"),
+}
+
+enum class QuickTileType(
+    val key: String,
+    val label: String,
+    val subtitle: String,
+) {
+    PLAY_PAUSE("play_pause", "Música", "Control principal de reproducción"),
+    NEXT("next", "Siguiente", "Saltar a la siguiente pista"),
+    PREVIOUS("previous", "Anterior", "Volver a la pista anterior"),
+    SHUFFLE("shuffle", "Aleatorio", "Alternar modo aleatorio"),
+    REPEAT("repeat", "Repetir", "Alternar repetición de lista o pista"),
+    FAVORITE("favorite", "Me gusta", "Marcar canción como favorita"),
+    SLEEP_TIMER("sleep_timer", "Temporizador", "Temporizador rápido 15m / 30m / Apagar"),
+}
+
+enum class LockPrivacyLevel(
+    val label: String,
+    val description: String,
+) {
+    PUBLIC("Completa", "Muestra carátula, título, artista y controles en bloqueo"),
+    HIDE_SENSITIVE("Ocultar carátula y título", "Muestra controles esenciales sin datos de la pista"),
+    SECRET("Ocultar bloqueado", "Bloquea MagicMusic hasta desbloquear el teléfono"),
+}
 
 @Immutable
 data class LockAndQsConfig(
@@ -238,71 +374,14 @@ data class LockAndQsConfig(
 )
 
 @Immutable
-data class MediaSessionPreferences(
-    val priorityRule: SessionPriorityRule = SessionPriorityRule.PLAYING_FIRST,
-    val preferredServicePackage: String = MusicServiceApp.SPOTIFY.packageName,
-    val ignoreVideoSessions: Boolean = false,
-    val disabledPackages: Set<String> = emptySet(),
-)
-
-@Immutable
-data class EqualizerConfig(
-    val enabled: Boolean = true,
-    val presetIndex: Int = 0,
-    val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f),
-    val isAdvancedMode: Boolean = false,
-    val hiResBufferHigh: Boolean = true,
-    val bassBoostStrength: Int = 0,
-    val loudnessGainMb: Int = 0,
-    val gaplessEnabled: Boolean = true,
-    val crossfadeSeconds: Int = 0,
-    val replayGainEnabled: Boolean = true,
-    val float24BitOutput: Boolean = true,
-    val activeOutputCategory: AudioOutputCategory = AudioOutputCategory.SPEAKER,
-    val deviceProfiles: Map<AudioOutputCategory, DeviceEqProfile> = emptyMap(),
-)
-
-@Immutable
-data class ActiveSessionInfo(
-    val packageName: String,
-    val service: MusicServiceApp,
-    val title: String,
-    val artist: String,
-    val isPlaying: Boolean,
-    val isSelected: Boolean,
-    val appLabel: String = service.displayName,
-)
-
 data class InstalledServiceStatus(
     val service: MusicServiceApp,
+    val packageName: String,
+    val realAppName: String,
     val isInstalled: Boolean,
     val isActiveSession: Boolean,
-    val packageName: String = service.packageName,
-    val realAppName: String = service.displayName,
+    val isManagedEnabled: Boolean,
     val appIcon: Drawable? = null,
-    val isManagedEnabled: Boolean = true,
-)
-
-@Immutable
-data class QueueTrackItem(
-    val queueId: Long,
-    val title: String,
-    val artist: String,
-    val durationMs: Long = 0L,
-    val isCurrent: Boolean = false,
-)
-
-@Immutable
-data class LyricsLine(
-    val timestampMs: Long,
-    val text: String,
-)
-
-@Immutable
-data class LyricsData(
-    val lines: List<LyricsLine> = emptyList(),
-    val isSynced: Boolean = false,
-    val sourceNote: String = "",
 )
 
 @Immutable
@@ -318,8 +397,7 @@ data class TrackHistoryEntry(
     val durationMs: Long = 0L,
 ) {
     val service: MusicServiceApp
-        get() = MusicServiceApp.entries.firstOrNull { it.id == serviceId }
-            ?: MusicServiceApp.fromPackageName(packageName)
+        get() = MusicServiceApp.fromId(serviceId)
 }
 
 @Immutable
@@ -329,6 +407,57 @@ data class LocalListeningStats(
     val recentTracks: List<TrackHistoryEntry> = emptyList(),
     val favoriteTrackIds: Set<String> = emptySet(),
     val playlistTrackIds: Set<String> = emptySet(),
+)
+
+enum class AudioOutputCategory(val label: String) {
+    SPEAKER("Altavoz"),
+    WIRED("Cable / USB-C"),
+    BLUETOOTH("Bluetooth"),
+}
+
+@Immutable
+data class DeviceEqProfile(
+    val category: AudioOutputCategory,
+    val enabled: Boolean = true,
+    val presetIndex: Int = 0,
+    val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f),
+    val bassBoostStrength: Int = 0,
+    val virtualizerStrength: Int = 0,
+    val loudnessGainMb: Int = 0,
+    val preampGainDb: Float = 0f,
+    val stereoBalance: Float = 0f,
+)
+
+@Immutable
+data class CustomEqPreset(
+    val id: String,
+    val name: String,
+    val bandGainsDb: List<Float>,
+    val bassBoostStrength: Int = 0,
+    val virtualizerStrength: Int = 0,
+    val loudnessGainMb: Int = 0,
+    val preampGainDb: Float = 0f,
+)
+
+@Immutable
+data class EqualizerConfig(
+    val enabled: Boolean = true,
+    val presetIndex: Int = 0,
+    val customPresetName: String = "",
+    val bandGainsDb: List<Float> = listOf(0f, 0f, 0f, 0f, 0f),
+    val isAdvancedMode: Boolean = false,
+    val hiResBufferHigh: Boolean = true,
+    val bassBoostStrength: Int = 0, // 0..1000
+    val virtualizerStrength: Int = 0, // 0..1000
+    val loudnessGainMb: Int = 0, // 0..1000
+    val preampGainDb: Float = 0f, // -6f..+6f
+    val stereoBalance: Float = 0f, // -1f..+1f
+    val gaplessEnabled: Boolean = true,
+    val replayGainEnabled: Boolean = true,
+    val float24BitOutput: Boolean = true,
+    val crossfadeSeconds: Int = 0, // 0..12
+    val activeOutputCategory: AudioOutputCategory = AudioOutputCategory.SPEAKER,
+    val deviceProfiles: Map<AudioOutputCategory, DeviceEqProfile> = emptyMap(),
 )
 
 @Immutable
@@ -341,38 +470,18 @@ data class AudioOutputDevice(
     val routeId: String? = null,
 )
 
-data class UnifiedMediaState(
-    val title: String = "Sin música activa",
-    val artist: String = "Abre tu reproductor de música favorito",
-    val album: String = "MagicMusic",
-    val packageName: String = "",
-    val service: MusicServiceApp = MusicServiceApp.OTHER,
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
-    val albumArt: Bitmap? = null,
-    val isLocalEngine: Boolean = false,
-    val activeSessions: List<ActiveSessionInfo> = emptyList(),
-    val lastUpdatedMs: Long = 0L,
-    val canPlayPause: Boolean = true,
-    val canSkipNext: Boolean = true,
-    val canSkipPrevious: Boolean = true,
-    val canSeek: Boolean = true,
-    val canFavorite: Boolean = false,
-    val isFavorite: Boolean = false,
-    val canShuffle: Boolean = false,
-    val isShuffleEnabled: Boolean = false,
-    val canRepeat: Boolean = false,
-    val isRepeatEnabled: Boolean = false,
-    val queue: List<QueueTrackItem> = emptyList(),
-    val lyrics: LyricsData? = null,
-) {
-    val hasActiveMedia: Boolean
-        get() = packageName.isNotBlank() || isLocalEngine
+enum class LibrarySourceFilter(val label: String) {
+    ALL("Todo"),
+    LOCAL("Local"),
+    SPOTIFY("Spotify"),
+    YOUTUBE("YouTube Music"),
+    APPLE_MUSIC("Apple Music"),
+}
 
-    val progressFraction: Float
-        get() = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
-    val trackKey: String
-        get() = "${packageName}|${title}|${artist}".lowercase()
+enum class LibrarySortOption(val label: String) {
+    TITLE("Título A–Z"),
+    ARTIST("Artista"),
+    RECENT("Recientes"),
+    MOST_PLAYED("Más escuchadas"),
+    DURATION("Duración"),
 }

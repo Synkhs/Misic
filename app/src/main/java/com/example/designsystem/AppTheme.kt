@@ -2,8 +2,13 @@ package com.example.designsystem
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import com.example.designsystem.expressive.ArtworkShapeStyle
+import com.example.designsystem.expressive.GeometryPreset
+import com.example.designsystem.expressive.MiniPlayerStyle
+import com.example.designsystem.expressive.NavLabelVisibility
 
-const val DEFAULT_VIOLET_SEED_ARGB: Long = 0xFFB38CFFL
+// Calibrated to the reference video: dark #121218 surface + #C0C1FF lavender primary + #3A47B5 indigo container
+const val DEFAULT_VIOLET_SEED_ARGB: Long = 0xFF5C6BFFL
 
 @Immutable
 data class SeedColorSwatch(
@@ -15,18 +20,16 @@ data class SeedColorSwatch(
 }
 
 val DefaultSeedSwatches: List<SeedColorSwatch> = listOf(
-    SeedColorSwatch("violet", "Violeta", 0xFFB38CFFL),
-    SeedColorSwatch("lavender", "Lavanda", 0xFFD0BCFFL),
-    SeedColorSwatch("indigo", "Índigo", 0xFF7B9CFFL),
-    SeedColorSwatch("blue", "Azul", 0xFF67B7FFL),
-    SeedColorSwatch("cyan", "Cian", 0xFF4FD8EBL),
-    SeedColorSwatch("mint", "Menta", 0xFF64FFDAL),
-    SeedColorSwatch("emerald", "Esmeralda", 0xFF5CE0A8L),
-    SeedColorSwatch("lime", "Lima", 0xFFAEE571L),
-    SeedColorSwatch("amber", "Ámbar", 0xFFFFD54FL),
-    SeedColorSwatch("coral", "Coral", 0xFFFF8A80L),
-    SeedColorSwatch("rose", "Rosa", 0xFFFF8FB1L),
-    SeedColorSwatch("plum", "Ciruela", 0xFFE086FFL),
+    SeedColorSwatch("indigo_lavender", "Lavanda", 0xFF5C6BFFL),
+    SeedColorSwatch("violet", "Violeta", 0xFF7B5CFFL),
+    SeedColorSwatch("cobalt", "Cobalto", 0xFF3E63DDL),
+    SeedColorSwatch("cyan", "Cian", 0xFF00A7C7L),
+    SeedColorSwatch("emerald", "Esmeralda", 0xFF1E9E68L),
+    SeedColorSwatch("lime", "Lima", 0xFF7CB342L),
+    SeedColorSwatch("amber", "Ámbar", 0xFFE69F00L),
+    SeedColorSwatch("coral", "Coral", 0xFFE55950L),
+    SeedColorSwatch("rose", "Rosa", 0xFFD94A8CL),
+    SeedColorSwatch("plum", "Ciruela", 0xFF9C4DCCL),
 )
 
 enum class AppThemeId(
@@ -38,8 +41,8 @@ enum class AppThemeId(
         subtitle = "Extrae colores del fondo de pantalla en Android 12+",
     ),
     MATERIAL_3_STATIC(
-        title = "Material 3 Violeta",
-        subtitle = "Paleta tonal violeta y lila calibrada",
+        title = "Material 3 Personalizado",
+        subtitle = "Paleta tonal Material Color Utilities",
     ),
 }
 
@@ -86,9 +89,21 @@ data class ThemePreferences(
     val themeMode: ThemeMode = ThemeMode.DARK,
     val surfaceToneStyle: SurfaceToneStyle = SurfaceToneStyle.TONAL,
     val seedColorArgb: Long = DEFAULT_VIOLET_SEED_ARGB,
+    val schemeVariant: McuSchemeVariant = McuSchemeVariant.TONAL_SPOT,
+    val contrastLevel: ContrastPreset = ContrastPreset.STANDARD,
     val pureAmoledBlack: Boolean = false,
     val colorFromArtwork: Boolean = true,
     val reduceAnimations: Boolean = false,
+    val useExpressiveM3: Boolean = true,
+    val hapticFeedbackEnabled: Boolean = true,
+    val geometryPreset: GeometryPreset = GeometryPreset.STANDARD_M3,
+    val artworkShape: ArtworkShapeStyle = ArtworkShapeStyle.ROUNDED,
+    val navLabelVisibility: NavLabelVisibility = NavLabelVisibility.ALWAYS,
+    val miniPlayerStyle: MiniPlayerStyle = MiniPlayerStyle.CARD,
+    val libraryGridColumns: Int = 2,
+    val lyricsAutoScroll: Boolean = true,
+    val lyricsFontScale: Float = 1.0f,
+    val roleOverrides: ColorRoleOverrides = ColorRoleOverrides(),
 ) {
     fun toAppTheme(): AppTheme = AppTheme.fromPreferences(this)
 

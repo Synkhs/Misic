@@ -27,6 +27,12 @@ class ExampleRobolectricTest {
     @get:Rule
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
+    @org.junit.Before
+    fun setupPermission() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        org.robolectric.Shadows.shadowOf(context).grantPermissions(android.Manifest.permission.READ_MEDIA_AUDIO)
+    }
+
     @Test
     fun appName_matchesMagicMusic() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -59,36 +65,34 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun navigationTabs_switchBetweenHomeWidgetsControlsAndSettings() {
+    fun navigationTabs_switchBetweenLibraryPlaylistsEqualizerStyleAndSettings() {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("magic_mini_player").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("library_main_list").assertIsDisplayed()
 
-        // Widgets tab & 4 formats + pin action
-        composeTestRule.onNodeWithTag("nav_tab_widgets").performClick()
+        // Listas tab
+        composeTestRule.onNodeWithTag("nav_tab_playlists").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("studio_mode_card").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("studio_pin_widget_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("playlists_screen_list").assertIsDisplayed()
 
-        // Controls tab & internal Lock / Quick Settings tabs
-        composeTestRule.onNodeWithTag("nav_tab_controls").performClick()
+        // Ecualizador tab
+        composeTestRule.onNodeWithTag("nav_tab_equalizer").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("equalizer_screen_list").assertIsDisplayed()
+
+        // Estilo tab -> Estudio de Widgets
+        composeTestRule.onNodeWithTag("nav_tab_style").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("appearance_list").assertIsDisplayed()
+
+        // Ajustes -> Controles (Pantalla de bloqueo & QS) -> add_qs_tile_play_pause
+        composeTestRule.onNodeWithTag("nav_tab_settings").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("settings_row_controls").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("open_lock_deck_preview_btn").assertIsDisplayed()
         composeTestRule.onNodeWithTag("controls_tab_qs").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("add_qs_play_tile_btn").assertIsDisplayed()
-
-        // Settings tab -> Services -> Back -> Appearance
-        composeTestRule.onNodeWithTag("nav_tab_settings").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("settings_row_services").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("services_list").performScrollToNode(hasTestTag("service_card_spotify"))
-        composeTestRule.onNodeWithTag("service_card_spotify").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("services_back_btn").performClick()
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onNodeWithTag("settings_row_appearance").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("appearance_list").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("add_qs_tile_play_pause").assertIsDisplayed()
     }
 }

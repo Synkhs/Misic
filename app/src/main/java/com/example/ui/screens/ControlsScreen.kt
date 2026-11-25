@@ -55,7 +55,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -183,25 +182,16 @@ fun ControlsScreen(
                     }
                 }
 
-                // Lock screen simulation & MediaStyle bridge
+                // Lock screen simulation & MediaStyle bridge (pure Material 3)
                 item {
                     Surface(
                         shape = RoundedCornerShape(tokens.radii.sheet),
-                        color = Color(0xFF0A0D16),
-                        border = BorderStroke(1.dp, colors.primary.copy(alpha = 0.45f)),
+                        color = colors.surfaceContainerLow,
+                        border = BorderStroke(1.dp, colors.outlineVariant),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(
-                            modifier = Modifier
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            colors.primary.copy(alpha = 0.22f),
-                                            Color(0xFF0A0D16),
-                                        ),
-                                    ),
-                                )
-                                .padding(18.dp),
+                            modifier = Modifier.padding(18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
@@ -214,7 +204,7 @@ fun ControlsScreen(
                                 text = "12:57",
                                 style = MaterialTheme.typography.displayMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = colors.onSurface,
                             )
                             Text(
                                 text = when {
@@ -225,15 +215,15 @@ fun ControlsScreen(
                                     else -> "MediaStyle activo sobre bloqueo"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.72f),
+                                color = colors.onSurfaceVariant,
                             )
 
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Surface(
                                 shape = RoundedCornerShape(22.dp),
-                                color = Color(0xFF1A1E2B).copy(alpha = 0.94f),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                                color = colors.surfaceContainerHigh,
+                                border = BorderStroke(1.dp, colors.outlineVariant),
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
@@ -250,7 +240,7 @@ fun ControlsScreen(
                                                     else -> "Sin música activa"
                                                 },
                                                 style = MaterialTheme.typography.titleMedium,
-                                                color = Color.White,
+                                                color = colors.onSurface,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
@@ -261,7 +251,7 @@ fun ControlsScreen(
                                                     "${media.artist} • ${media.service.displayName}"
                                                 },
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = Color.White.copy(alpha = 0.72f),
+                                                color = colors.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
@@ -279,17 +269,17 @@ fun ControlsScreen(
                                             tint = colors.primary,
                                         )
                                         IconButton(onClick = onPrevious) {
-                                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = Color.White)
+                                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = colors.onSurface)
                                         }
                                         IconButton(onClick = onPlayPause) {
                                             Icon(
                                                 imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                                 contentDescription = "Play/Pausa",
-                                                tint = Color.White,
+                                                tint = colors.primary,
                                             )
                                         }
                                         IconButton(onClick = onNext) {
-                                            Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = Color.White)
+                                            Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = colors.onSurface)
                                         }
                                         Icon(
                                             imageVector = customActionIcon(cfg.lockScreenAction2),
