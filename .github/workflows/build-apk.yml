@@ -58,28 +58,17 @@ jobs:
         with:
           gradle-version: ${{ steps.locate.outputs.gradle_version }}
 
-      - name: Create .env and debug.keystore if missing
+      - name: Create .env and debug.keystore
         working-directory: ${{ steps.locate.outputs.project_dir }}
         run: |
           if [ ! -f .env ]; then touch .env; fi
           if [ ! -f debug.keystore ]; then
-            eval "$(python3 -c '
-          import re, pathlib
-          p = pathlib.Path("app/build.gradle.kts")
-          if not p.exists():
-              p = pathlib.Path("app/build.gradle")
-          txt = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
-          for k, var, default in [("storePassword", "STORE_PASS", "android"), ("keyAlias", "KEY_ALIAS", "androiddebugkey"), ("keyPassword", "KEY_PASS", "android")]:
-              m = re.search(k + r"\s*=?\s*\"([^\"]+)\"", txt)
-              val = m.group(1) if m else default
-              print(f"{var}=\"{val}\"")
-          ')"
             keytool -genkeypair -noprompt \
               -keystore debug.keystore \
               -storetype PKCS12 \
-              -storepass "$STORE_PASS" \
-              -alias "$KEY_ALIAS" \
-              -keypass "$KEY_PASS" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
