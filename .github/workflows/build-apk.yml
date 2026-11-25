@@ -21,14 +21,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - name: Locate Android project
+      - name: Locate Android project & Gradle version
         id: locate
         run: |
           GRADLEW_PATH=$(find . -maxdepth 3 -name "gradlew" | head -n 1)
           if [ -n "$GRADLEW_PATH" ]; then
             PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-            echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-            echo "has_gradlew=true" >> "$GITHUB_OUTPUT"
+            HAS_GRADLEW="true"
           else
             SETTINGS_PATH=$(find . -maxdepth 3 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
             if [ -n "$SETTINGS_PATH" ]; then
@@ -36,10 +35,19 @@ jobs:
             else
               PROJECT_DIR="."
             fi
-            echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-            echo "has_gradlew=false" >> "$GITHUB_OUTPUT"
+            HAS_GRADLEW="false"
           fi
-          echo "Detected project directory: $PROJECT_DIR"
+
+          WRAPPER_PROPS="$PROJECT_DIR/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$WRAPPER_PROPS" ]; then
+            DETECTED_VER=$(grep -oE 'gradle-[0-9]+\.[0-9]+(\.[0-9]+)?' "$WRAPPER_PROPS" | head -n 1 | sed 's/gradle-//')
+          fi
+          GRADLE_VER="${DETECTED_VER:-9.3.1}"
+
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "has_gradlew=$HAS_GRADLEW" >> "$GITHUB_OUTPUT"
+          echo "gradle_version=$GRADLE_VER" >> "$GITHUB_OUTPUT"
+          echo "Project: $PROJECT_DIR | gradlew: $HAS_GRADLEW | Gradle: $GRADLE_VER"
 
       - name: Setup Gradle (Wrapper)
         if: steps.locate.outputs.has_gradlew == 'true'
@@ -49,7 +57,7 @@ jobs:
         if: steps.locate.outputs.has_gradlew != 'true'
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: ${{ steps.locate.outputs.gradle_version }}
 
       - name: Create .env if missing
         working-directory: ${{ steps.locate.outputs.project_dir }}
