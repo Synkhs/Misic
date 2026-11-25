@@ -47,7 +47,6 @@ jobs:
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
           echo "has_gradlew=$HAS_GRADLEW" >> "$GITHUB_OUTPUT"
           echo "gradle_version=$GRADLE_VER" >> "$GITHUB_OUTPUT"
-          echo "Project: $PROJECT_DIR | gradlew: $HAS_GRADLEW | Gradle: $GRADLE_VER"
 
       - name: Setup Gradle (Wrapper)
         if: steps.locate.outputs.has_gradlew == 'true'
@@ -59,10 +58,33 @@ jobs:
         with:
           gradle-version: ${{ steps.locate.outputs.gradle_version }}
 
-      - name: Create .env if missing
+      - name: Create .env and debug.keystore if missing
         working-directory: ${{ steps.locate.outputs.project_dir }}
         run: |
           if [ ! -f .env ]; then touch .env; fi
+          if [ ! -f debug.keystore ]; then
+            eval "$(python3 -c '
+          import re, pathlib
+          p = pathlib.Path("app/build.gradle.kts")
+          if not p.exists():
+              p = pathlib.Path("app/build.gradle")
+          txt = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+          for k, var, default in [("storePassword", "STORE_PASS", "android"), ("keyAlias", "KEY_ALIAS", "androiddebugkey"), ("keyPassword", "KEY_PASS", "android")]:
+              m = re.search(k + r"\s*=?\s*\"([^\"]+)\"", txt)
+              val = m.group(1) if m else default
+              print(f"{var}=\"{val}\"")
+          ')"
+            keytool -genkeypair -noprompt \
+              -keystore debug.keystore \
+              -storetype PKCS12 \
+              -storepass "$STORE_PASS" \
+              -alias "$KEY_ALIAS" \
+              -keypass "$KEY_PASS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build Debug APK
         working-directory: ${{ steps.locate.outputs.project_dir }}
