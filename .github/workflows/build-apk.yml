@@ -21,21 +21,54 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      - name: Setup Gradle
+      - name: Locate Android project
+        id: locate
+        run: |
+          GRADLEW_PATH=$(find . -maxdepth 3 -name "gradlew" | head -n 1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+            echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+            echo "has_gradlew=true" >> "$GITHUB_OUTPUT"
+          else
+            SETTINGS_PATH=$(find . -maxdepth 3 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+            if [ -n "$SETTINGS_PATH" ]; then
+              PROJECT_DIR=$(dirname "$SETTINGS_PATH")
+            else
+              PROJECT_DIR="."
+            fi
+            echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+            echo "has_gradlew=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected project directory: $PROJECT_DIR"
+
+      - name: Setup Gradle (Wrapper)
+        if: steps.locate.outputs.has_gradlew == 'true'
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Setup Gradle (Fallback)
+        if: steps.locate.outputs.has_gradlew != 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
       - name: Create .env if missing
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         run: |
           if [ ! -f .env ]; then touch .env; fi
 
       - name: Build Debug APK
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         run: |
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Upload MagicMusic APK
         uses: actions/upload-artifact@v4
         with:
           name: MagicMusic-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
